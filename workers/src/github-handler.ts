@@ -19,22 +19,33 @@ const app = new Hono<{ Bindings: Env }>();
 
 /**
  * Authorization endpoint - redirects to GitHub OAuth.
+ *
+ * Supports two modes:
+ * 1. Full OAuth (MCP clients): requires client_id, redirect_uri, state
+ * 2. CLI mode: just redirect_uri (for video-to-claude CLI uploads)
  */
 app.get("/authorize", async (c) => {
   const url = new URL(c.req.url);
   const clientId = url.searchParams.get("client_id");
   const redirectUri = url.searchParams.get("redirect_uri");
-  const state = url.searchParams.get("state");
+  const state = url.searchParams.get("state") || crypto.randomUUID();
   const scope = url.searchParams.get("scope");
   const codeChallenge = url.searchParams.get("code_challenge");
 
-  if (!clientId || !redirectUri || !state) {
+  // CLI mode: only redirect_uri is required
+  const isCLIMode = !clientId && redirectUri;
+
+  if (!isCLIMode && (!clientId || !redirectUri || !state)) {
     return c.text("Missing required OAuth parameters", 400);
+  }
+
+  if (!redirectUri) {
+    return c.text("Missing redirect_uri parameter", 400);
   }
 
   // Store OAuth state for callback
   const oauthState: OAuthState = {
-    clientId,
+    clientId: clientId || "cli",
     redirectUri,
     state,
     codeChallenge,
@@ -156,7 +167,21 @@ app.get("/callback", async (c) => {
   // Clean up OAuth state
   await c.env.OAUTH_KV.delete(stateKey);
 
-  // Redirect back to client with authorization code
+  // CLI mode: return token directly (localhost callbacks)
+  if (oauthState.clientId === "cli" || oauthState.redirectUri.includes("localhost")) {
+    // Generate MCP token directly for CLI
+    const mcpToken = crypto.randomUUID();
+    const tokenKey = `token:${mcpToken}`;
+    await c.env.OAUTH_KV.put(tokenKey, JSON.stringify(authProps), {
+      expirationTtl: 604800, // 7 days for CLI tokens
+    });
+
+    const redirectUrl = new URL(oauthState.redirectUri);
+    redirectUrl.searchParams.set("token", mcpToken);
+    return c.redirect(redirectUrl.href);
+  }
+
+  // Standard OAuth flow: return authorization code
   const redirectUrl = new URL(oauthState.redirectUri);
   redirectUrl.searchParams.set("code", sessionToken);
   redirectUrl.searchParams.set("state", oauthState.state);

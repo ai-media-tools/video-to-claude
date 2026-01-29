@@ -26,6 +26,7 @@ import {
   GetAudioAnalysisSchema,
 } from "./tools.js";
 import { GitHubHandler } from "./github-handler.js";
+import { createVideoId, uploadVideo } from "./r2.js";
 
 // MCP Protocol types
 interface MCPRequest {
@@ -196,6 +197,7 @@ app.get("/", (c) => {
     endpoints: {
       mcp: "/mcp",
       sse: "/sse",
+      upload: "/upload",
       oauth: {
         authorize: "/authorize",
         callback: "/callback",
@@ -207,6 +209,74 @@ app.get("/", (c) => {
 
 // Mount GitHub OAuth handler
 app.route("/", GitHubHandler);
+
+// Upload endpoint - allows authenticated users to upload processed videos
+app.post("/upload", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  const user = await authenticate(c.env, authHeader);
+
+  // Require authentication for uploads
+  if (!user) {
+    return c.json({ error: "Unauthorized. Please authenticate with GitHub first." }, 401);
+  }
+
+  try {
+    const formData = await c.req.formData();
+    const name = formData.get("name");
+
+    if (!name || typeof name !== "string") {
+      return c.json({ error: "Missing 'name' field" }, 400);
+    }
+
+    // Check for manifest (required)
+    const manifest = formData.get("manifest.json");
+    if (!manifest || !(manifest instanceof File)) {
+      return c.json({ error: "Missing manifest.json file" }, 400);
+    }
+
+    // Create video ID
+    const videoId = createVideoId(name);
+
+    // Collect all files
+    const files = new Map<string, { data: ArrayBuffer; contentType: string }>();
+
+    for (const [key, value] of formData.entries()) {
+      if (key === "name") continue;
+      if (!(value instanceof File)) continue;
+
+      const data = await value.arrayBuffer();
+      const contentType = value.type || getContentType(key);
+      files.set(key, { data, contentType });
+    }
+
+    // Upload to R2
+    await uploadVideo(c.env.R2, videoId, name, files);
+
+    return c.json({
+      success: true,
+      video_id: videoId,
+      name,
+      files: Array.from(files.keys()),
+      uploaded_by: user.login,
+    });
+  } catch (error) {
+    console.error("Upload error:", error);
+    return c.json(
+      { error: error instanceof Error ? error.message : "Upload failed" },
+      500
+    );
+  }
+});
+
+/**
+ * Get content type from filename.
+ */
+function getContentType(filename: string): string {
+  if (filename.endsWith(".json")) return "application/json";
+  if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) return "image/jpeg";
+  if (filename.endsWith(".png")) return "image/png";
+  return "application/octet-stream";
+}
 
 /**
  * Authenticate request and get user props.
@@ -358,11 +428,10 @@ app.post("/mcp", async (c) => {
   const authHeader = c.req.header("Authorization");
   const user = await authenticate(c.env, authHeader);
 
-  // For now, allow unauthenticated access for testing
-  // In production, you may want to require authentication:
-  // if (!user) {
-  //   return c.json({ error: "Unauthorized" }, 401);
-  // }
+  // Require authentication
+  if (!user) {
+    return c.json({ error: "Unauthorized. Authenticate via /authorize first." }, 401);
+  }
 
   try {
     const body = await c.req.json();

@@ -131,13 +131,18 @@ def info(video: Path, as_json: bool):
 @main.command("upload")
 @click.argument("output_dir", type=click.Path(exists=True, path_type=Path))
 @click.option("--name", "-n", required=True, help="Name for the video in cloud storage")
-@click.option("--bucket", "-b", default="video-to-claude-storage", help="R2 bucket name")
-def upload(output_dir: Path, name: str, bucket: str):
+@click.option("--token", "-t", envvar="VIDEO_TO_CLAUDE_TOKEN", help="OAuth token (or set VIDEO_TO_CLAUDE_TOKEN)")
+@click.option("--direct", is_flag=True, help="Upload directly to R2 (requires credentials)")
+@click.option("--bucket", "-b", default="video-to-claude-storage", help="R2 bucket name (for --direct)")
+def upload(output_dir: Path, name: str, token: str | None, direct: bool, bucket: str):
     """
-    Upload processed video output to Cloudflare R2.
+    Upload processed video output to the cloud.
 
     OUTPUT_DIR is the directory containing the processed video files
     (must include manifest.json).
+
+    By default, uploads via the hosted server with GitHub authentication.
+    Use --direct to upload directly to R2 (requires credentials).
     """
     output_dir = output_dir.resolve()
 
@@ -148,25 +153,55 @@ def upload(output_dir: Path, name: str, bucket: str):
         click.echo("Run 'video-to-claude convert' first to process the video", err=True)
         sys.exit(1)
 
-    try:
-        from .upload import upload_to_r2
-    except ImportError:
-        click.echo("Error: Upload functionality requires the 'upload' extra", err=True)
-        click.echo("Install with: pip install video-to-claude[upload]", err=True)
-        sys.exit(1)
+    if direct:
+        # Direct R2 upload (requires credentials)
+        try:
+            from .upload import upload_to_r2
+        except ImportError:
+            click.echo("Error: Direct upload requires the 'upload' extra", err=True)
+            click.echo("Install with: pip install video-to-claude[upload]", err=True)
+            sys.exit(1)
 
-    try:
-        click.echo(f"Uploading to R2 bucket '{bucket}'...")
-        video_id = upload_to_r2(output_dir, name, bucket)
-        click.echo()
-        click.echo(click.style("Success!", fg="green", bold=True))
-        click.echo(f"Video ID: {video_id}")
-        click.echo()
-        click.echo("Your video is now accessible via the remote MCP server.")
+        try:
+            click.echo(f"Uploading directly to R2 bucket '{bucket}'...")
+            video_id = upload_to_r2(output_dir, name, bucket)
+            click.echo()
+            click.echo(click.style("Success!", fg="green", bold=True))
+            click.echo(f"Video ID: {video_id}")
+            click.echo()
+            click.echo("Your video is now accessible via the remote MCP server.")
+        except Exception as e:
+            click.echo(f"Upload failed: {e}", err=True)
+            sys.exit(1)
+    else:
+        # Upload via worker API (no R2 credentials needed)
+        from .upload import upload_via_worker, get_auth_token, DEFAULT_SERVER_URL
 
-    except Exception as e:
-        click.echo(f"Upload failed: {e}", err=True)
-        sys.exit(1)
+        try:
+            # Get token if not provided
+            if not token:
+                click.echo("No token provided. Starting GitHub authentication...")
+                click.echo()
+                token = get_auth_token()
+                click.echo()
+                click.echo("Authentication successful!")
+                click.echo(f"Tip: Set VIDEO_TO_CLAUDE_TOKEN={token} to skip auth next time")
+                click.echo()
+
+            click.echo(f"Uploading '{name}'...")
+            result = upload_via_worker(output_dir, name, token)
+
+            click.echo()
+            click.echo(click.style("Success!", fg="green", bold=True))
+            click.echo(f"Video ID: {result['video_id']}")
+            click.echo(f"Files uploaded: {len(result['files'])}")
+            click.echo()
+            click.echo("Your video is now accessible via the remote MCP server.")
+            click.echo(f"Server: {DEFAULT_SERVER_URL}")
+
+        except Exception as e:
+            click.echo(f"Upload failed: {e}", err=True)
+            sys.exit(1)
 
 
 # For backwards compatibility, also support direct invocation without subcommand

@@ -183,3 +183,68 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   }
   return btoa(binary);
 }
+
+/**
+ * Upload a file to R2.
+ */
+export async function uploadFile(
+  r2: R2Bucket,
+  key: string,
+  data: ArrayBuffer | string,
+  contentType: string
+): Promise<void> {
+  await r2.put(key, data, {
+    httpMetadata: { contentType },
+  });
+}
+
+/**
+ * Create a video ID from name.
+ */
+export function createVideoId(name: string): string {
+  // Slugify the name
+  let slug = name.toLowerCase();
+  slug = slug.replace(/[\s_]+/g, "-");
+  slug = slug.replace(/[^a-z0-9-]/g, "");
+  slug = slug.replace(/-+/g, "-");
+  slug = slug.replace(/^-|-$/g, "");
+
+  // Add random suffix for uniqueness
+  const suffix = Math.random().toString(36).substring(2, 8);
+  return `${slug}-${suffix}`;
+}
+
+/**
+ * Upload a complete video package to R2.
+ */
+export async function uploadVideo(
+  r2: R2Bucket,
+  videoId: string,
+  name: string,
+  files: Map<string, { data: ArrayBuffer; contentType: string }>
+): Promise<void> {
+  const uploadedFiles: string[] = [];
+
+  // Upload all files
+  for (const [filename, { data, contentType }] of files) {
+    const key = `${videoId}/${filename}`;
+    await uploadFile(r2, key, data, contentType);
+    uploadedFiles.push(filename);
+  }
+
+  // Create index file
+  const indexData = {
+    video_id: videoId,
+    name,
+    files: uploadedFiles,
+    manifest: `${videoId}/manifest.json`,
+    uploaded_at: new Date().toISOString(),
+  };
+
+  await uploadFile(
+    r2,
+    `${videoId}/_index.json`,
+    JSON.stringify(indexData, null, 2),
+    "application/json"
+  );
+}

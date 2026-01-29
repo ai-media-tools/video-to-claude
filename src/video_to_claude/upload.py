@@ -8,6 +8,9 @@ import mimetypes
 import os
 import re
 from pathlib import Path
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+import webbrowser
 
 try:
     import boto3
@@ -15,6 +18,9 @@ try:
 except ImportError:
     boto3 = None
     Config = None
+
+# Default remote server URL
+DEFAULT_SERVER_URL = "https://api.ai-media-tools.dev"
 
 
 def slugify(text: str) -> str:
@@ -282,3 +288,165 @@ def download_from_r2(
             client.download_file(bucket, key, str(local_path))
 
     return output_dir
+
+
+def upload_via_worker(
+    output_dir: Path | str,
+    name: str,
+    token: str,
+    server_url: str = DEFAULT_SERVER_URL,
+) -> dict:
+    """
+    Upload processed video via the remote worker API.
+
+    This method doesn't require R2 credentials - authentication is done
+    via GitHub OAuth through the worker.
+
+    Args:
+        output_dir: Directory containing the processed video files
+        name: Human-readable name for the video
+        token: OAuth access token from GitHub authentication
+        server_url: URL of the remote MCP server
+
+    Returns:
+        Response from server including video_id
+
+    Raises:
+        ValueError: If manifest.json not found
+        RuntimeError: If upload fails
+    """
+    output_dir = Path(output_dir).resolve()
+    manifest_path = output_dir / "manifest.json"
+
+    if not manifest_path.exists():
+        raise ValueError(f"No manifest.json found in {output_dir}")
+
+    # Build multipart form data manually (no external deps)
+    boundary = "----VideoToClaudeBoundary" + os.urandom(8).hex()
+    body_parts = []
+
+    # Add name field
+    body_parts.append(f'--{boundary}\r\n'.encode())
+    body_parts.append(b'Content-Disposition: form-data; name="name"\r\n\r\n')
+    body_parts.append(f'{name}\r\n'.encode())
+
+    # Files to upload
+    files_to_upload = ["manifest.json", "audio_analysis.json", "spectrogram.png", "waveform.png"]
+
+    # Add all frame files
+    for frame in output_dir.glob("frame_*.jpg"):
+        files_to_upload.append(frame.name)
+
+    # Add each file
+    for filename in files_to_upload:
+        file_path = output_dir / filename
+        if not file_path.exists():
+            continue
+
+        content_type, _ = mimetypes.guess_type(filename)
+        if content_type is None:
+            content_type = "application/octet-stream"
+
+        body_parts.append(f'--{boundary}\r\n'.encode())
+        body_parts.append(
+            f'Content-Disposition: form-data; name="{filename}"; filename="{filename}"\r\n'.encode()
+        )
+        body_parts.append(f'Content-Type: {content_type}\r\n\r\n'.encode())
+
+        with open(file_path, "rb") as f:
+            body_parts.append(f.read())
+        body_parts.append(b'\r\n')
+
+    # Final boundary
+    body_parts.append(f'--{boundary}--\r\n'.encode())
+
+    body = b''.join(body_parts)
+
+    # Make request
+    upload_url = f"{server_url.rstrip('/')}/upload"
+    req = Request(upload_url, data=body, method="POST")
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+    req.add_header("User-Agent", "video-to-claude/0.2.0")
+
+    try:
+        with urlopen(req) as response:
+            result = json.loads(response.read().decode())
+            return result
+    except HTTPError as e:
+        error_body = e.read().decode() if e.fp else str(e)
+        try:
+            error_data = json.loads(error_body)
+            raise RuntimeError(f"Upload failed: {error_data.get('error', error_body)}")
+        except json.JSONDecodeError:
+            raise RuntimeError(f"Upload failed: {error_body}")
+
+
+def get_auth_token(server_url: str = DEFAULT_SERVER_URL) -> str:
+    """
+    Get an OAuth token by authenticating with GitHub.
+
+    This opens a browser for GitHub OAuth and waits for the token.
+
+    Args:
+        server_url: URL of the remote MCP server
+
+    Returns:
+        OAuth access token
+    """
+    import http.server
+    import urllib.parse
+    import threading
+
+    token_result = {"token": None, "done": False}
+
+    class CallbackHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+
+            # Ignore favicon and other requests
+            if "token" in params:
+                token_result["token"] = params["token"][0]
+                token_result["done"] = True
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html><body><h1>Authentication successful!</h1>")
+                self.wfile.write(b"<p>You can close this window and return to the terminal.</p>")
+                self.wfile.write(b"</body></html>")
+            elif "/callback" in self.path and "token" not in params:
+                # Callback without token = error
+                token_result["done"] = True
+                self.send_response(400)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html><body><h1>Authentication failed</h1></body></html>")
+            else:
+                # Favicon or other request - just return 404 silently
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, format, *args):
+            pass  # Suppress logging
+
+    # Start local server to receive callback
+    server = http.server.HTTPServer(("localhost", 8765), CallbackHandler)
+    server.timeout = 1  # 1 second timeout for handle_request
+
+    # Open browser for OAuth
+    auth_url = f"{server_url}/authorize?redirect_uri=http://localhost:8765/callback"
+    print(f"Opening browser for GitHub authentication...")
+    print(f"If browser doesn't open, visit: {auth_url}")
+    webbrowser.open(auth_url)
+
+    # Wait for callback with timeout
+    while not token_result["done"]:
+        server.handle_request()
+
+    server.server_close()
+
+    if not token_result["token"]:
+        raise RuntimeError("Authentication failed - no token received")
+
+    return token_result["token"]
