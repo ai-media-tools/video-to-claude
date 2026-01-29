@@ -58,9 +58,9 @@ video-to-claude = "video_to_claude.cli:main"
 video-to-claude-mcp = "video_to_claude.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/video-to-claude/video-to-claude"
-Repository = "https://github.com/video-to-claude/video-to-claude"
-Issues = "https://github.com/video-to-claude/video-to-claude/issues"
+Homepage = "https://github.com/ai-media-tools/video-to-claude"
+Repository = "https://github.com/ai-media-tools/video-to-claude"
+Issues = "https://github.com/ai-media-tools/video-to-claude/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/video_to_claude"]
