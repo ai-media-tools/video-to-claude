@@ -130,3 +130,78 @@ export interface AudioAnalysis {
   }>;
   text_description: string;
 }
+
+/**
+ * RFC 9728 - OAuth 2.0 Protected Resource Metadata
+ */
+export interface ProtectedResourceMetadata {
+  resource: string;
+  authorization_servers: string[];
+  bearer_methods_supported?: string[];
+  resource_signing_alg_values_supported?: string[];
+  resource_documentation?: string;
+  resource_policy_uri?: string;
+  resource_tos_uri?: string;
+}
+
+/**
+ * RFC 8414 - OAuth 2.0 Authorization Server Metadata
+ */
+export interface AuthorizationServerMetadata {
+  issuer: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  registration_endpoint?: string;
+  scopes_supported?: string[];
+  response_types_supported: string[];
+  response_modes_supported?: string[];
+  grant_types_supported?: string[];
+  token_endpoint_auth_methods_supported?: string[];
+  code_challenge_methods_supported?: string[];
+  service_documentation?: string;
+}
+
+/**
+ * RFC 7591 - OAuth 2.0 Dynamic Client Registration
+ */
+export interface ClientRegistrationRequest {
+  redirect_uris: string[];
+  token_endpoint_auth_method?: string;
+  grant_types?: string[];
+  response_types?: string[];
+  client_name?: string;
+  client_uri?: string;
+  logo_uri?: string;
+  scope?: string;
+  contacts?: string[];
+  tos_uri?: string;
+  policy_uri?: string;
+  software_id?: string;
+  software_version?: string;
+}
+
+export interface ClientRegistrationResponse {
+  client_id: string;
+  client_secret?: string;
+  client_id_issued_at?: number;
+  client_secret_expires_at?: number;
+  redirect_uris: string[];
+  token_endpoint_auth_method: string;
+  grant_types: string[];
+  response_types: string[];
+  client_name?: string;
+}
+
+/**
+ * Registered OAuth client stored in KV.
+ */
+export interface RegisteredClient {
+  client_id: string;
+  client_secret?: string;
+  redirect_uris: string[];
+  client_name?: string;
+  grant_types: string[];
+  response_types: string[];
+  token_endpoint_auth_method: string;
+  created_at: number;
+}

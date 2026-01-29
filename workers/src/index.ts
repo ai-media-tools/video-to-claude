@@ -26,6 +26,7 @@ import {
   GetAudioAnalysisSchema,
 } from "./tools.js";
 import { GitHubHandler } from "./github-handler.js";
+import { OAuthMetadataHandler, getWWWAuthenticateHeader } from "./oauth-metadata.js";
 import { createVideoId, uploadVideo } from "./r2.js";
 
 // MCP Protocol types
@@ -171,8 +172,8 @@ const TOOLS = [
 // Server info
 const SERVER_INFO = {
   name: "video-to-claude-remote",
-  version: "0.1.0",
-  protocolVersion: "2024-11-05",
+  version: "0.2.0",
+  protocolVersion: "2025-06-18",
 };
 
 // Create Hono app
@@ -193,12 +194,16 @@ app.get("/", (c) => {
   return c.json({
     name: SERVER_INFO.name,
     version: SERVER_INFO.version,
+    protocolVersion: SERVER_INFO.protocolVersion,
     status: "healthy",
     endpoints: {
       mcp: "/mcp",
       sse: "/sse",
       upload: "/upload",
       oauth: {
+        protected_resource_metadata: "/.well-known/oauth-protected-resource",
+        authorization_server_metadata: "/.well-known/oauth-authorization-server",
+        register: "/register",
         authorize: "/authorize",
         callback: "/callback",
         token: "/token",
@@ -206,6 +211,9 @@ app.get("/", (c) => {
     },
   });
 });
+
+// Mount OAuth metadata endpoints (RFC 9728 & RFC 8414)
+app.route("/", OAuthMetadataHandler);
 
 // Mount GitHub OAuth handler
 app.route("/", GitHubHandler);
@@ -217,7 +225,12 @@ app.post("/upload", async (c) => {
 
   // Require authentication for uploads
   if (!user) {
-    return c.json({ error: "Unauthorized. Please authenticate with GitHub first." }, 401);
+    const baseUrl = new URL(c.req.url).origin;
+    return c.json(
+      { error: "Unauthorized. Please authenticate first." },
+      401,
+      { "WWW-Authenticate": getWWWAuthenticateHeader(baseUrl) }
+    );
   }
 
   try {
@@ -230,7 +243,7 @@ app.post("/upload", async (c) => {
 
     // Check for manifest (required)
     const manifest = formData.get("manifest.json");
-    if (!manifest || !(manifest instanceof File)) {
+    if (!manifest || typeof manifest === "string") {
       return c.json({ error: "Missing manifest.json file" }, 400);
     }
 
@@ -242,10 +255,11 @@ app.post("/upload", async (c) => {
 
     for (const [key, value] of formData.entries()) {
       if (key === "name") continue;
-      if (!(value instanceof File)) continue;
+      if (typeof value === "string") continue;
 
-      const data = await value.arrayBuffer();
-      const contentType = value.type || getContentType(key);
+      const file = value as globalThis.File;
+      const data = await file.arrayBuffer();
+      const contentType = file.type || getContentType(key);
       files.set(key, { data, contentType });
     }
 
@@ -428,9 +442,21 @@ app.post("/mcp", async (c) => {
   const authHeader = c.req.header("Authorization");
   const user = await authenticate(c.env, authHeader);
 
-  // Require authentication
+  // Require authentication - return proper WWW-Authenticate header per RFC 9728
   if (!user) {
-    return c.json({ error: "Unauthorized. Authenticate via /authorize first." }, 401);
+    const baseUrl = new URL(c.req.url).origin;
+    return c.json(
+      {
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: -32001,
+          message: "Unauthorized",
+        },
+      },
+      401,
+      { "WWW-Authenticate": getWWWAuthenticateHeader(baseUrl) }
+    );
   }
 
   try {
