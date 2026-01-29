@@ -90,6 +90,7 @@ def get_r2_client(
         endpoint_url=endpoint_url,
         aws_access_key_id=access_key_id,
         aws_secret_access_key=secret_access_key,
+        region_name="auto",
         config=Config(
             signature_version="s3v4",
             retries={"max_attempts": 3, "mode": "standard"}
