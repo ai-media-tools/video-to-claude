@@ -170,6 +170,45 @@ my_video_for_claude/
 └── audio_analysis.json    # Detailed audio metrics
 ```
 
+## Troubleshooting
+
+### Authentication Issues
+
+**Browser doesn't open or callback hangs:**
+- Check if port 8765 is available: `lsof -i :8765`
+- Try using the `--token` flag with an existing token
+- Check firewall settings for localhost connections
+
+**Already have a token?** Skip the browser flow:
+```bash
+video-to-claude upload ./output --name "Video" --token YOUR_TOKEN
+# Or set it as an environment variable
+export VIDEO_TO_CLAUDE_TOKEN="your-token"
+```
+
+### Upload Issues
+
+**"error code: 1010" during upload:**
+
+This typically means a required header is missing. Ensure you're using the latest version:
+```bash
+pip install --upgrade video-to-claude
+```
+
+### Processing Issues
+
+**ffmpeg not found:**
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
+
+# Verify installation
+ffmpeg -version
+```
+
 ## Why?
 
 Videos contain moments worth sharing - a pet's greeting, a child's first steps, a sunset. Claude can understand these moments through sequential frames and audio analysis, experiencing the motion and sound in its own way.
