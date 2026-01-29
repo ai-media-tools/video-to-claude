@@ -124,7 +124,7 @@ app.get("/callback", async (c) => {
 
   if (tokenData.error || !tokenData.access_token) {
     return c.text(
-      `Token exchange failed: ${tokenData.error_description || tokenData.error}`,
+      `Token exchange failed: ${tokenData.error_description || tokenData.error || JSON.stringify(tokenData)}`,
       400
     );
   }

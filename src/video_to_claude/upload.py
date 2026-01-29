@@ -394,59 +394,84 @@ def get_auth_token(server_url: str = DEFAULT_SERVER_URL) -> str:
     Returns:
         OAuth access token
     """
-    import http.server
+    import socket
     import urllib.parse
-    import threading
 
-    token_result = {"token": None, "done": False}
+    token = None
+    error = None
 
-    class CallbackHandler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            parsed = urllib.parse.urlparse(self.path)
-            params = urllib.parse.parse_qs(parsed.query)
+    # Create a simple socket server
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(('127.0.0.1', 8765))
+    sock.listen(1)
+    sock.settimeout(120)  # 2 minute timeout
 
-            # Ignore favicon and other requests
-            if "token" in params:
-                token_result["token"] = params["token"][0]
-                token_result["done"] = True
-                self.send_response(200)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                self.wfile.write(b"<html><body><h1>Authentication successful!</h1>")
-                self.wfile.write(b"<p>You can close this window and return to the terminal.</p>")
-                self.wfile.write(b"</body></html>")
-            elif "/callback" in self.path and "token" not in params:
-                # Callback without token = error
-                token_result["done"] = True
-                self.send_response(400)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                self.wfile.write(b"<html><body><h1>Authentication failed</h1></body></html>")
-            else:
-                # Favicon or other request - just return 404 silently
-                self.send_response(404)
-                self.end_headers()
-
-        def log_message(self, format, *args):
-            pass  # Suppress logging
-
-    # Start local server to receive callback
-    server = http.server.HTTPServer(("localhost", 8765), CallbackHandler)
-    server.timeout = 1  # 1 second timeout for handle_request
-
-    # Open browser for OAuth
-    auth_url = f"{server_url}/authorize?redirect_uri=http://localhost:8765/callback"
-    print(f"Opening browser for GitHub authentication...")
+    # Open browser for OAuth - use 127.0.0.1 not localhost to avoid IPv6 issues
+    auth_url = f"{server_url}/authorize?redirect_uri=http://127.0.0.1:8765/callback"
+    print("Opening browser for GitHub authentication...")
     print(f"If browser doesn't open, visit: {auth_url}")
     webbrowser.open(auth_url)
 
-    # Wait for callback with timeout
-    while not token_result["done"]:
-        server.handle_request()
+    try:
+        while token is None and error is None:
+            conn, addr = sock.accept()
 
-    server.server_close()
+            # Read the HTTP request
+            data = conn.recv(4096).decode('utf-8')
 
-    if not token_result["token"]:
-        raise RuntimeError("Authentication failed - no token received")
+            # Parse the request line
+            if data:
+                request_line = data.split('\r\n')[0]
 
-    return token_result["token"]
+                # Extract path
+                parts = request_line.split(' ')
+                if len(parts) >= 2:
+                    path = parts[1]
+                    parsed = urllib.parse.urlparse(path)
+                    params = urllib.parse.parse_qs(parsed.query)
+
+                    if 'token' in params:
+                        token = params['token'][0]
+
+                        # Send success response
+                        response = """HTTP/1.0 200 OK\r
+Content-Type: text/html\r
+Connection: close\r
+\r
+<!DOCTYPE html>
+<html><head><title>Success</title></head>
+<body style="font-family: system-ui; text-align: center; padding-top: 100px;">
+<h1 style="color: #22c55e;">Authentication Successful!</h1>
+<p>You can close this window and return to the terminal.</p>
+</body></html>"""
+                        conn.sendall(response.encode())
+                    elif '/callback' in path:
+                        error = "No token in callback"
+                        response = """HTTP/1.0 400 Bad Request\r
+Content-Type: text/html\r
+Connection: close\r
+\r
+<!DOCTYPE html>
+<html><head><title>Error</title></head>
+<body style="font-family: system-ui; text-align: center; padding-top: 100px;">
+<h1 style="color: #ef4444;">Authentication Failed</h1>
+<p>No token received.</p>
+</body></html>"""
+                        conn.sendall(response.encode())
+                    else:
+                        # Favicon or other - 404
+                        conn.sendall(b"HTTP/1.0 404 Not Found\r\nConnection: close\r\n\r\n")
+
+            conn.close()
+    except socket.timeout:
+        raise RuntimeError("Authentication timed out - no response received")
+    finally:
+        sock.close()
+
+    if token:
+        return token
+    elif error:
+        raise RuntimeError(f"Authentication failed: {error}")
+    else:
+        raise RuntimeError("Authentication failed - unknown error")
