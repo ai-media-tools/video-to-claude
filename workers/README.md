@@ -2,12 +2,23 @@
 
 Cloudflare Workers-based MCP server for serving pre-processed video content with GitHub OAuth authentication.
 
+**Production Deployment:** https://api.ai-media-tools.dev
+
+## Features
+
+- Secure upload endpoint with GitHub OAuth authentication
+- MCP server for accessing uploaded videos (requires auth)
+- Custom domain support
+- R2 storage for video frames and audio analysis
+- RESTful API for video management
+
 ## Prerequisites
 
 - Node.js 18+
 - Cloudflare account with Workers enabled
 - R2 bucket for storage
 - GitHub OAuth App for authentication
+- (Optional) Custom domain configured in Cloudflare
 
 ## Setup
 
@@ -37,9 +48,11 @@ Update `wrangler.toml` with the returned namespace ID.
 2. Click "New OAuth App"
 3. Set:
    - Application name: `video-to-claude`
-   - Homepage URL: `https://your-worker.workers.dev`
-   - Callback URL: `https://your-worker.workers.dev/callback`
+   - Homepage URL: `https://your-domain.com` (or `https://your-worker.workers.dev`)
+   - Callback URL: `https://your-domain.com/callback` (or `https://your-worker.workers.dev/callback`)
 4. Note the Client ID and generate a Client Secret
+
+**Note:** If using a custom domain, use that domain in the URLs. You can update these later after deploying.
 
 ### 5. Set Secrets
 
@@ -70,14 +83,22 @@ This starts a local development server at http://localhost:8787.
 
 ## Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Health check and server info |
-| `/mcp` | POST | MCP JSON-RPC endpoint (streamable HTTP) |
-| `/sse` | GET | SSE endpoint (legacy transport) |
-| `/authorize` | GET | OAuth authorization start |
-| `/callback` | GET | OAuth callback handler |
-| `/token` | POST | Token exchange endpoint |
+| Endpoint | Method | Auth Required | Description |
+|----------|--------|---------------|-------------|
+| `/` | GET | No | Health check and server info |
+| `/mcp` | POST | **Yes** | MCP JSON-RPC endpoint (streamable HTTP) |
+| `/sse` | GET | **Yes** | SSE endpoint (legacy transport) |
+| `/upload` | POST | **Yes** | Upload processed video files |
+| `/authorize` | GET | No | OAuth authorization start |
+| `/callback` | GET | No | OAuth callback handler |
+
+**Authentication:** Endpoints marked with "Yes" require a Bearer token in the `Authorization` header:
+
+```bash
+Authorization: Bearer YOUR_GITHUB_TOKEN
+```
+
+Tokens are obtained through the GitHub OAuth flow (`/authorize` -> `/callback`).
 
 ## MCP Tools
 
@@ -125,7 +146,7 @@ video-to-claude-storage/
 
 ## Connecting from Claude Desktop
 
-Add to your Claude Desktop config:
+Add to your Claude Desktop config with authentication:
 
 ```json
 {
@@ -134,9 +155,46 @@ Add to your Claude Desktop config:
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://your-worker.workers.dev/mcp"
-      ]
+        "https://api.ai-media-tools.dev/mcp"
+      ],
+      "env": {
+        "MCP_AUTH_TOKEN": "your-github-oauth-token"
+      }
     }
   }
 }
 ```
+
+**Getting your token:**
+
+Run the upload command to authenticate and get your token:
+
+```bash
+video-to-claude upload --get-token
+```
+
+Or set the `VIDEO_TO_CLAUDE_TOKEN` environment variable if you already have a token.
+
+## Custom Domain Setup
+
+To use a custom domain like `api.ai-media-tools.dev`:
+
+1. **Add domain to Cloudflare** (if not already added)
+2. **Deploy your worker**: `npm run deploy`
+3. **Add custom domain in Cloudflare dashboard**:
+   - Go to Workers & Pages
+   - Select your worker
+   - Go to Settings > Domains & Routes
+   - Click "Add Custom Domain"
+   - Enter your domain (e.g., `api.ai-media-tools.dev`)
+4. **Update GitHub OAuth App**:
+   - Go to your OAuth App settings
+   - Update Homepage URL and Callback URL to use custom domain
+5. **Update client code** (if self-hosting):
+   - Update `DEFAULT_SERVER_URL` in `src/video_to_claude/upload.py`
+
+Custom domains provide:
+- Professional appearance
+- Cleaner URLs
+- Better branding
+- SSL/TLS certificates (automatic via Cloudflare)

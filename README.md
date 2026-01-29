@@ -4,6 +4,26 @@ Translate video files into a format Claude can experience.
 
 Claude can't watch videos, but it can view images and read data. This tool extracts sequential frames, generates spectrograms, and produces audio analysis - everything Claude needs to "experience" your video.
 
+[![PyPI](https://img.shields.io/pypi/v/video-to-claude)](https://pypi.org/project/video-to-claude/)
+[![Python Version](https://img.shields.io/pypi/pyversions/video-to-claude)](https://pypi.org/project/video-to-claude/)
+[![License](https://img.shields.io/pypi/l/video-to-claude)](https://github.com/lemonyte/video-to-claude/blob/main/LICENSE)
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+brew install ffmpeg  # macOS (or apt install ffmpeg on Ubuntu/Debian)
+pip install video-to-claude[mcp]
+
+# 2. Convert a video
+video-to-claude convert ~/Videos/my_video.mp4
+
+# 3. Upload to share with Claude
+video-to-claude upload ~/Videos/my_video_for_claude --name "My Video"
+
+# 4. Access via MCP server in Claude Desktop (see setup below)
+```
+
 ## Installation
 
 ```bash
@@ -15,9 +35,11 @@ apt install ffmpeg   # Ubuntu/Debian
 pip install video-to-claude[mcp]
 ```
 
-## MCP Server Setup (Claude Code)
+## MCP Server Setup
 
-Add to your Claude Code MCP settings:
+### Local MCP Server (Claude Code)
+
+Process videos locally on your machine:
 
 ```json
 {
@@ -34,7 +56,7 @@ Then ask Claude:
 - "Show me frame 10"
 - "What does the audio look like?"
 
-### Available Tools
+**Available Tools:**
 
 | Tool | Description |
 |------|-------------|
@@ -47,7 +69,49 @@ Then ask Claude:
 | `get_audio_analysis` | Get detailed audio metrics |
 | `get_manifest` | Get the full manifest |
 
+### Remote MCP Server (Access Uploaded Videos)
+
+Access your uploaded videos from anywhere using the remote MCP server at `https://api.ai-media-tools.dev`:
+
+```json
+{
+  "mcpServers": {
+    "video-to-claude-remote": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://api.ai-media-tools.dev/mcp"
+      ],
+      "env": {
+        "MCP_AUTH_TOKEN": "your-github-token-here"
+      }
+    }
+  }
+}
+```
+
+**Authentication Required:** The remote MCP endpoint requires a Bearer token. Use the token you received during upload authentication, or get a new one:
+
+```bash
+# Get your token
+video-to-claude upload --get-token
+```
+
+**Available Tools:**
+
+| Tool | Description |
+|------|-------------|
+| `list_videos` | List all your uploaded videos |
+| `get_manifest` | Get video manifest and metadata |
+| `get_frame` | View a specific frame |
+| `get_frames` | View multiple frames |
+| `get_spectrogram` | View audio frequency visualization |
+| `get_waveform` | View audio amplitude visualization |
+| `get_audio_analysis` | Get detailed audio metrics |
+
 ## CLI Usage
+
+### Convert Videos
 
 ```bash
 # Convert a video (20 frames + audio analysis)
@@ -61,6 +125,36 @@ video-to-claude convert ~/Videos/my_video.mp4 --no-audio
 
 # Get video info
 video-to-claude info ~/Videos/my_video.mp4
+```
+
+### Upload and Share Videos
+
+Upload processed videos to share them with Claude or access them from anywhere:
+
+```bash
+# Upload a processed video (uses GitHub OAuth)
+video-to-claude upload ~/Videos/my_video_for_claude --name "My Video"
+```
+
+**Authentication Flow:**
+
+1. First upload opens your browser for GitHub authentication
+2. Authorize the app to get a token
+3. Token is saved automatically for future uploads
+4. Set `VIDEO_TO_CLAUDE_TOKEN` environment variable to use the same token across sessions
+
+**Direct Upload (Advanced):**
+
+If you have R2 credentials, you can upload directly without authentication:
+
+```bash
+# Set environment variables
+export CLOUDFLARE_ACCOUNT_ID=your-account-id
+export CLOUDFLARE_R2_ACCESS_KEY_ID=your-access-key
+export CLOUDFLARE_R2_SECRET_ACCESS_KEY=your-secret-key
+
+# Upload with --direct flag
+video-to-claude upload ~/Videos/my_video_for_claude --name "My Video" --direct
 ```
 
 ## Output
