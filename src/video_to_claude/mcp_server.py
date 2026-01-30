@@ -13,6 +13,7 @@ from fastmcp.utilities.types import Image
 from .core import VideoProcessor
 from .core.frames import get_video_info
 from .download import download_video, is_youtube_url
+from .upload import upload_via_worker, get_auth_token, DEFAULT_SERVER_URL
 
 
 def is_url(s: str) -> bool:
@@ -25,16 +26,24 @@ mcp = FastMCP(
     instructions="""
     This MCP server converts videos into a format you can experience.
 
-    Use convert_video to process a video file or URL (including YouTube) -
-    it will extract frames, analyze audio, and create a manifest.
+    WORKFLOW:
+    1. convert_video - Process a video file or URL into frames + audio analysis
+    2. view_frame / view_all_frames - See the extracted frames
+    3. view_spectrogram / get_audio_analysis - Understand the audio
+    4. upload_video - Upload to cloud for remote access (optional)
 
-    Use get_video_info to get metadata about a video without processing it.
+    TOOLS:
+    - convert_video: Process video into frames and audio analysis
+    - get_video_info: Get metadata without processing
+    - view_frame: See a specific frame
+    - view_all_frames: See multiple frames at once
+    - view_spectrogram: See audio frequency visualization
+    - view_waveform: See audio amplitude over time
+    - get_audio_analysis: Get detailed audio analysis data
+    - get_manifest: Get the full manifest
+    - upload_video: Upload to cloud for remote access
 
-    Use view_frame to see a specific frame from a processed video.
-
-    Use view_spectrogram to see the audio spectrogram visualization.
-
-    Both convert_video and get_video_info accept:
+    SUPPORTED INPUTS:
     - Local file paths: /path/to/video.mp4
     - YouTube URLs: https://www.youtube.com/watch?v=...
     - Direct video URLs: https://example.com/video.mp4
@@ -330,6 +339,66 @@ def _view_all_frames(output_dir: str, max_frames: int = 10) -> list[Image]:
     return [Image(path=str(frame)) for frame in selected]
 
 
+def _upload_video(output_dir: str, name: str) -> dict:
+    """
+    Upload a processed video to the cloud for remote access.
+
+    This uploads all processed files (frames, spectrograms, audio analysis)
+    to the cloud storage, making them accessible via the remote MCP server
+    at api.ai-media-tools.dev.
+
+    Authentication is handled via GitHub OAuth. The token is cached in the
+    VIDEO_TO_CLAUDE_TOKEN environment variable for subsequent uploads.
+
+    Args:
+        output_dir: Path to the output directory containing processed video
+        name: Human-readable name for the video (will be used to generate video ID)
+
+    Returns:
+        Dictionary containing:
+        - success: Whether upload succeeded
+        - video_id: The ID used to access this video remotely
+        - name: The video name
+        - files: List of uploaded files
+        - uploaded_by: GitHub username of uploader
+    """
+    import os
+
+    out_dir = Path(output_dir).resolve()
+    manifest_path = out_dir / "manifest.json"
+
+    if not manifest_path.exists():
+        return {
+            "error": f"No manifest.json found in {out_dir}. "
+            "Make sure to run convert_video first."
+        }
+
+    # Check for existing token
+    token = os.environ.get("VIDEO_TO_CLAUDE_TOKEN")
+
+    if not token:
+        # Try to get a new token via browser OAuth
+        try:
+            print("No cached token found. Starting GitHub authentication...")
+            token = get_auth_token(DEFAULT_SERVER_URL)
+            # Cache it for future use
+            os.environ["VIDEO_TO_CLAUDE_TOKEN"] = token
+            print(f"Authentication successful! Token cached for this session.")
+            print(f"To persist, set: export VIDEO_TO_CLAUDE_TOKEN={token}")
+        except Exception as e:
+            return {
+                "error": f"Authentication failed: {e}. "
+                "You can set VIDEO_TO_CLAUDE_TOKEN environment variable manually."
+            }
+
+    # Upload via worker API
+    try:
+        result = upload_via_worker(out_dir, name, token, DEFAULT_SERVER_URL)
+        return result
+    except Exception as e:
+        return {"error": f"Upload failed: {e}"}
+
+
 # ============================================================================
 # MCP Tool wrappers (these delegate to internal functions)
 # ============================================================================
@@ -385,6 +454,12 @@ def get_manifest(output_dir: str) -> dict:
 def view_all_frames(output_dir: str, max_frames: int = 10) -> list[Image]:
     """View multiple frames from a processed video at once."""
     return _view_all_frames(output_dir, max_frames)
+
+
+@mcp.tool
+def upload_video(output_dir: str, name: str) -> dict:
+    """Upload a processed video to the cloud for remote access via api.ai-media-tools.dev."""
+    return _upload_video(output_dir, name)
 
 
 def main():
