@@ -7,6 +7,7 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
 import type { Env, AuthProps } from "./types.js";
 import {
@@ -28,6 +29,79 @@ import {
 import { GitHubHandler } from "./github-handler.js";
 import { OAuthMetadataHandler, getWWWAuthenticateHeader } from "./oauth-metadata.js";
 import { createVideoId, uploadVideo, listVideos, deleteVideo, getVideoOwner } from "./r2.js";
+
+// Rate limiting configuration
+interface RateLimitConfig {
+  maxRequests: number;
+  windowSeconds: number;
+}
+
+const RATE_LIMITS: Record<string, RateLimitConfig> = {
+  "/authorize": { maxRequests: 10, windowSeconds: 60 }, // 10 per minute
+  "/token": { maxRequests: 20, windowSeconds: 60 }, // 20 per minute
+  "/upload": { maxRequests: 5, windowSeconds: 60 }, // 5 per minute
+  "/mcp": { maxRequests: 100, windowSeconds: 60 }, // 100 per minute
+};
+
+/**
+ * Check rate limit for a request.
+ * Returns { allowed: true } or { allowed: false, retryAfter: seconds }
+ */
+async function checkRateLimit(
+  kv: KVNamespace,
+  identifier: string,
+  path: string
+): Promise<{ allowed: boolean; retryAfter?: number }> {
+  const config = RATE_LIMITS[path];
+  if (!config) return { allowed: true };
+
+  const key = `rate:${path}:${identifier}`;
+  const now = Math.floor(Date.now() / 1000);
+  const windowStart = now - config.windowSeconds;
+
+  // Get current rate limit data
+  const data = await kv.get(key);
+  let requests: number[] = [];
+
+  if (data) {
+    try {
+      requests = JSON.parse(data);
+      // Filter to only requests within the window
+      requests = requests.filter((ts: number) => ts > windowStart);
+    } catch {
+      requests = [];
+    }
+  }
+
+  if (requests.length >= config.maxRequests) {
+    // Find when the oldest request in window expires
+    const oldestInWindow = Math.min(...requests);
+    const retryAfter = oldestInWindow + config.windowSeconds - now;
+    return { allowed: false, retryAfter: Math.max(1, retryAfter) };
+  }
+
+  // Add current request
+  requests.push(now);
+
+  // Store with TTL slightly longer than window
+  await kv.put(key, JSON.stringify(requests), {
+    expirationTtl: config.windowSeconds + 10,
+  });
+
+  return { allowed: true };
+}
+
+/**
+ * Get client identifier for rate limiting.
+ * Uses CF-Connecting-IP header (set by Cloudflare) or falls back to forwarded IP.
+ */
+function getClientIdentifier(request: Request): string {
+  return (
+    request.headers.get("CF-Connecting-IP") ||
+    request.headers.get("X-Forwarded-For")?.split(",")[0].trim() ||
+    "unknown"
+  );
+}
 
 // MCP Protocol types
 interface MCPRequest {
@@ -179,15 +253,81 @@ const SERVER_INFO = {
 // Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
-// CORS middleware
+// Allowed origins for CORS
+const ALLOWED_ORIGINS = [
+  "https://ai-media-tools.dev",
+  "https://www.ai-media-tools.dev",
+  "http://localhost:5173", // Local development
+  "http://127.0.0.1:5173", // Local development (alternate)
+];
+
+// CORS middleware - restrict to allowed origins only
 app.use(
   "*",
   cors({
-    origin: "*",
+    origin: (origin) => {
+      // Allow requests with no origin (e.g., curl, mobile apps, MCP clients)
+      if (!origin) return null;
+      // Check if origin is in allowed list
+      if (ALLOWED_ORIGINS.includes(origin)) return origin;
+      // Reject unknown origins
+      return null;
+    },
     allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// Security headers middleware
+app.use(
+  "*",
+  secureHeaders({
+    // Prevent clickjacking
+    xFrameOptions: "DENY",
+    // Prevent MIME type sniffing
+    xContentTypeOptions: "nosniff",
+    // Control referrer information
+    referrerPolicy: "strict-origin-when-cross-origin",
+    // Enforce HTTPS (Cloudflare handles SSL, but this ensures browser compliance)
+    strictTransportSecurity: "max-age=31536000; includeSubDomains",
+    // Basic CSP - allow self and inline for API responses
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  })
+);
+
+// Rate limiting middleware for sensitive endpoints
+app.use("*", async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+
+  // Only rate limit specific paths
+  if (RATE_LIMITS[path]) {
+    const identifier = getClientIdentifier(c.req.raw);
+    const result = await checkRateLimit(c.env.OAUTH_KV, identifier, path);
+
+    if (!result.allowed) {
+      return c.json(
+        {
+          error: "rate_limit_exceeded",
+          error_description: "Too many requests. Please try again later.",
+          retry_after: result.retryAfter,
+        },
+        429,
+        {
+          "Retry-After": String(result.retryAfter),
+        }
+      );
+    }
+  }
+
+  await next();
+});
 
 // Health check
 app.get("/", (c) => {

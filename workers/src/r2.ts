@@ -224,6 +224,7 @@ export async function uploadFile(
 
 /**
  * Create a video ID from name.
+ * Uses crypto.randomUUID() for cryptographically secure random suffix.
  */
 export function createVideoId(name: string): string {
   // Slugify the name
@@ -233,8 +234,9 @@ export function createVideoId(name: string): string {
   slug = slug.replace(/-+/g, "-");
   slug = slug.replace(/^-|-$/g, "");
 
-  // Add random suffix for uniqueness
-  const suffix = Math.random().toString(36).substring(2, 8);
+  // Add cryptographically secure random suffix for uniqueness
+  // Use first 8 chars of UUID (without hyphens) for unpredictable IDs
+  const suffix = crypto.randomUUID().replace(/-/g, "").substring(0, 8);
   return `${slug}-${suffix}`;
 }
 

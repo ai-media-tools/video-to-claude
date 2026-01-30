@@ -27,12 +27,13 @@ export interface Env {
 
 /**
  * User properties from OAuth authentication.
+ * Note: accessToken is intentionally NOT stored in KV for security.
+ * We only use it during the initial GitHub API call, then discard it.
  */
 export interface AuthProps {
   login: string;
   name: string;
   email: string;
-  accessToken: string;
   avatar_url?: string;
 }
 

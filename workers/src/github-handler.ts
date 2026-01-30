@@ -286,12 +286,11 @@ app.get("/callback", async (c) => {
     }
   }
 
-  // Create auth props
+  // Create auth props (intentionally NOT storing GitHub access token for security)
   const authProps: AuthProps = {
     login: user.login,
     name: user.name || user.login,
     email: email || "",
-    accessToken: githubAccessToken,
   };
 
   // Clean up OAuth state
@@ -314,7 +313,16 @@ app.get("/callback", async (c) => {
     });
 
     const redirectUrl = new URL(oauthState.redirectUri);
-    redirectUrl.searchParams.set("token", mcpToken);
+
+    // For localhost (CLI), use query param since fragments aren't sent in HTTP requests
+    // For web dashboard, use hash fragment to avoid token in server logs/history
+    const isLocalhost = redirectUrl.hostname === "localhost" || redirectUrl.hostname === "127.0.0.1";
+    if (isLocalhost) {
+      redirectUrl.searchParams.set("token", mcpToken);
+    } else {
+      // Use fragment - doesn't get sent to server, safer for browser history
+      redirectUrl.hash = `token=${mcpToken}`;
+    }
     return c.redirect(redirectUrl.href);
   }
 

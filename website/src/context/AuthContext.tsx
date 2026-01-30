@@ -26,14 +26,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   // Check for token in URL (OAuth callback)
+  // Token is passed in hash fragment (#token=xxx) to avoid leaking in server logs
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlToken = params.get('token')
+    // Check hash fragment first (new secure method)
+    const hash = window.location.hash.slice(1) // Remove leading #
+    const hashParams = new URLSearchParams(hash)
+    const hashToken = hashParams.get('token')
+
+    // Fallback to query params for backwards compatibility
+    const searchParams = new URLSearchParams(window.location.search)
+    const searchToken = searchParams.get('token')
+
+    const urlToken = hashToken || searchToken
 
     if (urlToken) {
       localStorage.setItem('vtc_token', urlToken)
       setToken(urlToken)
-      // Clean URL
+      // Clean URL - remove both hash and query params
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
