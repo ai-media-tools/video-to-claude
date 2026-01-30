@@ -263,8 +263,8 @@ app.post("/upload", async (c) => {
       files.set(key, { data, contentType });
     }
 
-    // Upload to R2
-    await uploadVideo(c.env.R2, videoId, name, files);
+    // Upload to R2 with owner
+    await uploadVideo(c.env.R2, videoId, name, files, user.login);
 
     return c.json({
       success: true,
@@ -320,29 +320,30 @@ async function authenticate(
 async function handleToolCall(
   env: Env,
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  userLogin?: string
 ): Promise<unknown> {
   switch (name) {
     case "list_videos":
-      return handleListVideos(env.R2);
+      return handleListVideos(env.R2, userLogin);
 
     case "get_manifest":
-      return handleGetManifest(env.R2, GetManifestSchema.parse(args));
+      return handleGetManifest(env.R2, GetManifestSchema.parse(args), userLogin);
 
     case "get_frame":
-      return handleGetFrame(env.R2, GetFrameSchema.parse(args));
+      return handleGetFrame(env.R2, GetFrameSchema.parse(args), userLogin);
 
     case "get_frames":
-      return handleGetFrames(env.R2, GetFramesSchema.parse(args));
+      return handleGetFrames(env.R2, GetFramesSchema.parse(args), userLogin);
 
     case "get_spectrogram":
-      return handleGetSpectrogram(env.R2, GetSpectrogramSchema.parse(args));
+      return handleGetSpectrogram(env.R2, GetSpectrogramSchema.parse(args), userLogin);
 
     case "get_waveform":
-      return handleGetWaveform(env.R2, GetWaveformSchema.parse(args));
+      return handleGetWaveform(env.R2, GetWaveformSchema.parse(args), userLogin);
 
     case "get_audio_analysis":
-      return handleGetAudioAnalysis(env.R2, GetAudioAnalysisSchema.parse(args));
+      return handleGetAudioAnalysis(env.R2, GetAudioAnalysisSchema.parse(args), userLogin);
 
     default:
       throw new Error(`Unknown tool: ${name}`);
@@ -398,7 +399,8 @@ async function handleMCPRequest(
         const result = await handleToolCall(
           env,
           toolParams.name,
-          toolParams.arguments || {}
+          toolParams.arguments || {},
+          user?.login
         );
         return {
           jsonrpc: "2.0",

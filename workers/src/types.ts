@@ -97,6 +97,7 @@ export interface VideoIndex {
   files: string[];
   manifest: string;
   uploaded_at?: string;
+  owner?: string; // GitHub login of the user who uploaded
 }
 
 /**

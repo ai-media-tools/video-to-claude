@@ -12,6 +12,7 @@ import {
   getWaveform,
   getAudioAnalysis,
   getAvailableFrames,
+  getVideoOwner,
   arrayBufferToBase64,
 } from "./r2.js";
 
@@ -100,11 +101,15 @@ export const GetAudioAnalysisSchema = z.object({
 });
 
 /**
- * List all videos available in storage.
+ * List videos available to the current user.
  */
-export async function handleListVideos(r2: R2Bucket): Promise<ToolResponse> {
+export async function handleListVideos(
+  r2: R2Bucket,
+  userLogin?: string
+): Promise<ToolResponse> {
   try {
-    const videos = await listVideos(r2);
+    // Only show videos owned by this user
+    const videos = await listVideos(r2, userLogin);
 
     if (videos.length === 0) {
       return textResponse(
@@ -121,7 +126,7 @@ export async function handleListVideos(r2: R2Bucket): Promise<ToolResponse> {
       .join("\n");
 
     return textResponse(
-      `**Available Videos (${videos.length}):**\n\n${videoList}\n\n` +
+      `**Your Videos (${videos.length}):**\n\n${videoList}\n\n` +
         "Use `get_manifest(video_id)` to get details about a specific video."
     );
   } catch (error) {
@@ -130,13 +135,41 @@ export async function handleListVideos(r2: R2Bucket): Promise<ToolResponse> {
 }
 
 /**
+ * Check if user owns a video. Returns error response if not.
+ */
+async function checkOwnership(
+  r2: R2Bucket,
+  videoId: string,
+  userLogin?: string
+): Promise<ToolResponse | null> {
+  const owner = await getVideoOwner(r2, videoId);
+
+  // Video doesn't exist
+  if (owner === null) {
+    return errorResponse(`Video not found: ${videoId}`);
+  }
+
+  // Check ownership (if user is authenticated)
+  if (userLogin && owner && owner !== userLogin) {
+    return errorResponse(`Access denied: you don't own this video`);
+  }
+
+  return null; // Access granted
+}
+
+/**
  * Get the manifest for a specific video.
  */
 export async function handleGetManifest(
   r2: R2Bucket,
-  args: z.infer<typeof GetManifestSchema>
+  args: z.infer<typeof GetManifestSchema>,
+  userLogin?: string
 ): Promise<ToolResponse> {
   try {
+    // Check ownership first
+    const accessError = await checkOwnership(r2, args.video_id, userLogin);
+    if (accessError) return accessError;
+
     const manifest = await getManifest(r2, args.video_id);
 
     if (!manifest) {
@@ -193,9 +226,14 @@ export async function handleGetManifest(
  */
 export async function handleGetFrame(
   r2: R2Bucket,
-  args: z.infer<typeof GetFrameSchema>
+  args: z.infer<typeof GetFrameSchema>,
+  userLogin?: string
 ): Promise<ToolResponse> {
   try {
+    // Check ownership first
+    const accessError = await checkOwnership(r2, args.video_id, userLogin);
+    if (accessError) return accessError;
+
     const frame = await getFrame(r2, args.video_id, args.frame_number);
 
     if (!frame) {
@@ -236,9 +274,14 @@ export async function handleGetFrame(
  */
 export async function handleGetFrames(
   r2: R2Bucket,
-  args: z.infer<typeof GetFramesSchema>
+  args: z.infer<typeof GetFramesSchema>,
+  userLogin?: string
 ): Promise<ToolResponse> {
   try {
+    // Check ownership first
+    const accessError = await checkOwnership(r2, args.video_id, userLogin);
+    if (accessError) return accessError;
+
     const manifest = await getManifest(r2, args.video_id);
 
     if (!manifest) {
@@ -298,16 +341,17 @@ export async function handleGetFrames(
  */
 export async function handleGetSpectrogram(
   r2: R2Bucket,
-  args: z.infer<typeof GetSpectrogramSchema>
+  args: z.infer<typeof GetSpectrogramSchema>,
+  userLogin?: string
 ): Promise<ToolResponse> {
   try {
+    // Check ownership first
+    const accessError = await checkOwnership(r2, args.video_id, userLogin);
+    if (accessError) return accessError;
+
     const spectrogram = await getSpectrogram(r2, args.video_id);
 
     if (!spectrogram) {
-      const manifest = await getManifest(r2, args.video_id);
-      if (!manifest) {
-        return errorResponse(`Video not found: ${args.video_id}`);
-      }
       return errorResponse(
         "No spectrogram available. The video may not have audio or audio was not processed."
       );
@@ -331,16 +375,17 @@ export async function handleGetSpectrogram(
  */
 export async function handleGetWaveform(
   r2: R2Bucket,
-  args: z.infer<typeof GetWaveformSchema>
+  args: z.infer<typeof GetWaveformSchema>,
+  userLogin?: string
 ): Promise<ToolResponse> {
   try {
+    // Check ownership first
+    const accessError = await checkOwnership(r2, args.video_id, userLogin);
+    if (accessError) return accessError;
+
     const waveform = await getWaveform(r2, args.video_id);
 
     if (!waveform) {
-      const manifest = await getManifest(r2, args.video_id);
-      if (!manifest) {
-        return errorResponse(`Video not found: ${args.video_id}`);
-      }
       return errorResponse(
         "No waveform available. The video may not have audio or audio was not processed."
       );
@@ -363,16 +408,17 @@ export async function handleGetWaveform(
  */
 export async function handleGetAudioAnalysis(
   r2: R2Bucket,
-  args: z.infer<typeof GetAudioAnalysisSchema>
+  args: z.infer<typeof GetAudioAnalysisSchema>,
+  userLogin?: string
 ): Promise<ToolResponse> {
   try {
+    // Check ownership first
+    const accessError = await checkOwnership(r2, args.video_id, userLogin);
+    if (accessError) return accessError;
+
     const analysis = await getAudioAnalysis(r2, args.video_id);
 
     if (!analysis) {
-      const manifest = await getManifest(r2, args.video_id);
-      if (!manifest) {
-        return errorResponse(`Video not found: ${args.video_id}`);
-      }
       return errorResponse(
         "No audio analysis available. The video may not have audio or audio was not processed."
       );

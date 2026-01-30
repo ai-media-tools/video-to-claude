@@ -6,9 +6,12 @@ import type { R2Bucket } from "@cloudflare/workers-types";
 import type { VideoIndex, VideoManifest, AudioAnalysis } from "./types.js";
 
 /**
- * List all videos in the R2 bucket.
+ * List videos in the R2 bucket, optionally filtered by owner.
  */
-export async function listVideos(r2: R2Bucket): Promise<VideoIndex[]> {
+export async function listVideos(
+  r2: R2Bucket,
+  owner?: string
+): Promise<VideoIndex[]> {
   const videos: VideoIndex[] = [];
 
   // List all objects and find _index.json files
@@ -24,7 +27,10 @@ export async function listVideos(r2: R2Bucket): Promise<VideoIndex[]> {
           const indexObj = await r2.get(object.key);
           if (indexObj) {
             const indexData = (await indexObj.json()) as VideoIndex;
-            videos.push(indexData);
+            // Filter by owner if specified
+            if (!owner || indexData.owner === owner) {
+              videos.push(indexData);
+            }
           }
         } catch (error) {
           // Skip invalid index files
@@ -35,6 +41,24 @@ export async function listVideos(r2: R2Bucket): Promise<VideoIndex[]> {
   } while (cursor);
 
   return videos;
+}
+
+/**
+ * Get the owner of a video.
+ */
+export async function getVideoOwner(
+  r2: R2Bucket,
+  videoId: string
+): Promise<string | null> {
+  const key = `${videoId}/_index.json`;
+  const obj = await r2.get(key);
+
+  if (!obj) {
+    return null;
+  }
+
+  const indexData = (await obj.json()) as VideoIndex;
+  return indexData.owner || null;
 }
 
 /**
@@ -221,7 +245,8 @@ export async function uploadVideo(
   r2: R2Bucket,
   videoId: string,
   name: string,
-  files: Map<string, { data: ArrayBuffer; contentType: string }>
+  files: Map<string, { data: ArrayBuffer; contentType: string }>,
+  owner?: string
 ): Promise<void> {
   const uploadedFiles: string[] = [];
 
@@ -232,13 +257,14 @@ export async function uploadVideo(
     uploadedFiles.push(filename);
   }
 
-  // Create index file
-  const indexData = {
+  // Create index file with owner
+  const indexData: VideoIndex = {
     video_id: videoId,
     name,
     files: uploadedFiles,
     manifest: `${videoId}/manifest.json`,
     uploaded_at: new Date().toISOString(),
+    owner,
   };
 
   await uploadFile(
