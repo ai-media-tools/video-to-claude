@@ -68,6 +68,7 @@ Then ask Claude:
 | `view_waveform` | View audio amplitude visualization |
 | `get_audio_analysis` | Get detailed audio metrics |
 | `get_manifest` | Get the full manifest |
+| `upload_video` | Upload processed video to cloud for remote access |
 
 ### Remote MCP Server (Access Uploaded Videos)
 

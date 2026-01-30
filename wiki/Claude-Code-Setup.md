@@ -18,6 +18,7 @@ When configured, Claude Code gains these capabilities:
 | `view_waveform` | View audio amplitude visualization |
 | `get_audio_analysis` | Get detailed audio analysis data |
 | `get_manifest` | Get the full video manifest |
+| `upload_video` | Upload processed video to cloud for remote access |
 
 ---
 
@@ -245,6 +246,41 @@ Get the full manifest from processed video.
 | `output_dir` | string | Path to processed video directory |
 
 **Returns:** Full manifest dictionary
+
+### upload_video
+
+Upload a processed video to the cloud for remote access.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `output_dir` | string | Path to processed video directory |
+| `name` | string | Human-readable name for the video |
+
+**Returns:** Dictionary containing:
+- `success` - Whether upload succeeded
+- `video_id` - The ID used to access this video remotely
+- `name` - The video name
+- `files` - List of uploaded files
+- `uploaded_by` - GitHub username of uploader
+
+**Authentication:** Uses GitHub OAuth. The first upload will prompt for authentication in your browser. The token is cached in the `VIDEO_TO_CLAUDE_TOKEN` environment variable for subsequent uploads.
+
+---
+
+## Uploading from Claude Code
+
+With the `upload_video` tool, you can process and upload videos directly from Claude Code without using the CLI:
+
+**You:** Convert ~/Videos/wilson.mov and upload it to the cloud
+
+**Claude:** *Uses `convert_video` to process, then `upload_video` to upload, returns video ID*
+
+**You:** Upload the video at ~/Videos/my-cat_for_claude/ as "My Cat Video"
+
+**Claude:** *Uses `upload_video` tool, handles authentication, returns upload result*
+
+The uploaded video will then be accessible from claude.ai via the remote MCP server.
 
 ---
 

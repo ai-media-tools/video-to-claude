@@ -353,7 +353,7 @@ video-to-claude info video.mp4 --json
 
 If you're stuck:
 
-1. **Search existing issues:** https://github.com/anthropics/video-to-claude/issues
+1. **Search existing issues:** https://github.com/ai-media-tools/video-to-claude/issues
 2. **Create new issue** with:
    - Your OS and Python version
    - video-to-claude version

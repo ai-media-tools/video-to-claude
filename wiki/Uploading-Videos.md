@@ -12,9 +12,13 @@ After processing a video locally, you can upload it to the cloud. This lets you:
 - Share videos across devices
 - Keep your videos backed up
 
+You can upload via:
+- **CLI**: `video-to-claude upload` command
+- **Claude Code MCP**: Ask Claude to use the `upload_video` tool
+
 ---
 
-## Quick Upload
+## Quick Upload (CLI)
 
 ### Step 1: Process a Video
 
@@ -149,6 +153,47 @@ You can use either the name or ID when asking Claude about videos.
 
 ---
 
+## Quick Upload (Claude Code MCP)
+
+If you're using Claude Code with the video-to-claude MCP server, you can upload directly through Claude without using the CLI:
+
+### Upload a Processed Video
+
+**You:** Upload the video at ~/Videos/my-video_for_claude/ as "My Video"
+
+**Claude:** *Uses `upload_video` tool, handles authentication, returns video ID*
+
+### Convert and Upload in One Step
+
+**You:** Convert ~/Videos/wilson.mov and upload it as "Wilson Greets"
+
+**Claude:** *Uses `convert_video` to process, then `upload_video` to upload*
+
+### Authentication
+
+When you first use `upload_video`, your browser will open to authenticate with GitHub. After that, the token is cached for the session.
+
+To persist the token across sessions, set the environment variable:
+```bash
+export VIDEO_TO_CLAUDE_TOKEN=your-token-here
+```
+
+Or add it to your Claude Code MCP server config:
+```json
+{
+  "mcpServers": {
+    "video-to-claude": {
+      "command": "video-to-claude-mcp",
+      "env": {
+        "VIDEO_TO_CLAUDE_TOKEN": "your-token-here"
+      }
+    }
+  }
+}
+```
+
+---
+
 ## Direct R2 Upload (Advanced)
 
 For users with Cloudflare R2 credentials, you can upload directly without going through the worker API:
@@ -208,9 +253,14 @@ Or using the MCP tools directly.
 
 ### Deleting Videos
 
-Currently, video deletion is not available through the CLI. Contact support or manage directly if you have R2 access.
+You can delete videos through the web dashboard:
 
-*Note: Deletion via CLI is planned for a future release.*
+1. Go to [ai-media-tools.dev](https://ai-media-tools.dev)
+2. Sign in with GitHub
+3. Find the video you want to delete
+4. Click the delete button on the video card
+
+See **[Dashboard](Dashboard)** for more details on managing videos via the web interface.
 
 ---
 

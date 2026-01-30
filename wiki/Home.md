@@ -51,8 +51,12 @@ This creates a `my-video_for_claude/` directory with all the outputs.
 
 Let Claude process and view videos directly:
 
-- **Claude Code** - Local MCP server with full processing capabilities
+- **Claude Code** - Local MCP server with full processing capabilities, including upload
 - **Claude.ai** - Remote MCP server for viewing uploaded videos
+
+With Claude Code, you can ask Claude to convert a video and upload it to the cloud in one go:
+
+> "Convert ~/Videos/wilson.mov and upload it as 'Wilson Greets'"
 
 ---
 
@@ -64,6 +68,7 @@ Let Claude process and view videos directly:
 - **[Claude.ai Setup](Claude-AI-Setup)** - Remote MCP connector
 - **[YouTube & URLs](YouTube-and-URLs)** - Processing online videos
 - **[Uploading Videos](Uploading-Videos)** - Share videos to the cloud
+- **[Dashboard](Dashboard)** - Manage videos via web interface
 - **[Troubleshooting](Troubleshooting)** - Common issues and fixes
 
 ---
@@ -114,5 +119,6 @@ The manifest tells Claude:
 ## Links
 
 - [PyPI Package](https://pypi.org/project/video-to-claude/)
-- [GitHub Repository](https://github.com/anthropics/video-to-claude)
-- [Report Issues](https://github.com/anthropics/video-to-claude/issues)
+- [Website](https://ai-media-tools.dev)
+- [GitHub Repository](https://github.com/ai-media-tools/video-to-claude)
+- [Report Issues](https://github.com/ai-media-tools/video-to-claude/issues)

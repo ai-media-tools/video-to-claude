@@ -180,12 +180,22 @@ export function Dashboard() {
 
       {/* Info banner */}
       <div className="info-banner p-4 mb-8">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-[var(--color-cyan)] animate-pulse" />
-          <p className="text-sm text-[var(--color-text)]">
-            Videos auto-delete after <span className="text-[var(--color-cyan)] font-medium">90 days</span>.
-            Your content is private and encrypted.
-          </p>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-[var(--color-cyan)] animate-pulse" />
+            <p className="text-sm text-[var(--color-text)]">
+              Videos auto-delete after <span className="text-[var(--color-cyan)] font-medium">90 days</span>.
+              Your content is private and encrypted.
+            </p>
+          </div>
+          <a
+            href="https://github.com/ai-media-tools/video-to-claude/wiki"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-[var(--color-cyan)] hover:underline shrink-0"
+          >
+            Docs
+          </a>
         </div>
       </div>
 
@@ -328,7 +338,7 @@ function EmptyState() {
         No videos yet
       </h3>
       <p className="text-[var(--color-muted)] mb-8 max-w-sm mx-auto">
-        Upload your first video using the CLI to see it here.
+        Upload your first video using the CLI or Claude Code to see it here.
       </p>
 
       <div className="terminal max-w-lg mx-auto text-left">
@@ -350,6 +360,18 @@ function EmptyState() {
           </div>
         </div>
       </div>
+
+      <p className="mt-8 text-sm text-[var(--color-muted)]">
+        Need help?{' '}
+        <a
+          href="https://github.com/ai-media-tools/video-to-claude/wiki/Getting-Started"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[var(--color-cyan)] hover:underline"
+        >
+          Read the documentation
+        </a>
+      </p>
     </div>
   )
 }

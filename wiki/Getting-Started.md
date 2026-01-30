@@ -131,6 +131,8 @@ video-to-claude upload ./my-video_for_claude/ --name "My Video"
 
 Then connect to the remote MCP server on claude.ai. See [Claude.ai Setup](Claude-AI-Setup) for details.
 
+You can also manage your uploaded videos at [ai-media-tools.dev](https://ai-media-tools.dev) - see **[Dashboard](Dashboard)**.
+
 ---
 
 ## Step 4: Try a YouTube Video
@@ -200,3 +202,4 @@ Audio Sample Rate: 48000 Hz
 - **[Claude Code Setup](Claude-Code-Setup)** - Integrate with Claude Code
 - **[Claude.ai Setup](Claude-AI-Setup)** - Use from claude.ai
 - **[YouTube & URLs](YouTube-and-URLs)** - Process online videos
+- **[Dashboard](Dashboard)** - Manage uploaded videos via web
