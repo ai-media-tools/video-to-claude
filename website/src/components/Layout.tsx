@@ -10,6 +10,9 @@ export function Layout() {
             video-to-claude
           </Link>
           <div className="flex gap-6 text-sm">
+            <Link to="/dashboard" className="text-gray-400 hover:text-white transition-colors">
+              Dashboard
+            </Link>
             <Link to="/privacy" className="text-gray-400 hover:text-white transition-colors">
               Privacy
             </Link>

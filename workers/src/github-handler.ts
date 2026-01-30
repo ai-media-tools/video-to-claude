@@ -25,6 +25,26 @@ interface OAuthState {
 
 const app = new Hono<{ Bindings: Env }>();
 
+// Allowed redirect URI patterns for web dashboard
+const ALLOWED_REDIRECT_HOSTS = [
+  "localhost",
+  "127.0.0.1",
+  "ai-media-tools.dev",
+  "www.ai-media-tools.dev",
+];
+
+/**
+ * Check if a redirect URI is for our web dashboard or CLI.
+ */
+function isFirstPartyRedirect(redirectUri: string): boolean {
+  try {
+    const parsed = new URL(redirectUri);
+    return ALLOWED_REDIRECT_HOSTS.includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Validate a redirect URI against a registered client.
  */
@@ -33,16 +53,9 @@ function validateRedirectUri(
   redirectUri: string,
   isCLIMode: boolean
 ): boolean {
-  // CLI mode allows localhost
-  if (isCLIMode) {
-    try {
-      const parsed = new URL(redirectUri);
-      return (
-        parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"
-      );
-    } catch {
-      return false;
-    }
+  // CLI mode and first-party apps (CLI, web dashboard) are allowed
+  if (isCLIMode || isFirstPartyRedirect(redirectUri)) {
+    return true;
   }
 
   // For registered clients, check against registered URIs
@@ -284,17 +297,20 @@ app.get("/callback", async (c) => {
   // Clean up OAuth state
   await c.env.OAUTH_KV.delete(stateKey);
 
-  // CLI mode: return token directly (localhost callbacks)
-  if (
-    oauthState.clientId === "cli" ||
-    oauthState.redirectUri.includes("localhost") ||
-    oauthState.redirectUri.includes("127.0.0.1")
-  ) {
-    // Generate MCP token directly for CLI
+  // First-party mode: return token directly (CLI and web dashboard)
+  if (oauthState.clientId === "cli" || isFirstPartyRedirect(oauthState.redirectUri)) {
+    // Generate MCP token directly for first-party apps
     const mcpToken = crypto.randomUUID();
     const tokenKey = `token:${mcpToken}`;
-    await c.env.OAUTH_KV.put(tokenKey, JSON.stringify(authProps), {
-      expirationTtl: 604800, // 7 days for CLI tokens
+
+    // Include avatar_url for dashboard UI
+    const authPropsWithAvatar: AuthProps = {
+      ...authProps,
+      avatar_url: user.avatar_url,
+    };
+
+    await c.env.OAUTH_KV.put(tokenKey, JSON.stringify(authPropsWithAvatar), {
+      expirationTtl: 604800, // 7 days for first-party tokens
     });
 
     const redirectUrl = new URL(oauthState.redirectUri);

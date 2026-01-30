@@ -27,7 +27,7 @@ import {
 } from "./tools.js";
 import { GitHubHandler } from "./github-handler.js";
 import { OAuthMetadataHandler, getWWWAuthenticateHeader } from "./oauth-metadata.js";
-import { createVideoId, uploadVideo } from "./r2.js";
+import { createVideoId, uploadVideo, listVideos, deleteVideo, getVideoOwner } from "./r2.js";
 
 // MCP Protocol types
 interface MCPRequest {
@@ -184,7 +184,7 @@ app.use(
   "*",
   cors({
     origin: "*",
-    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
   })
 );
@@ -200,6 +200,11 @@ app.get("/", (c) => {
       mcp: "/mcp",
       sse: "/sse",
       upload: "/upload",
+      api: {
+        me: "/api/me",
+        videos: "/api/videos",
+        deleteVideo: "/api/videos/:videoId",
+      },
       oauth: {
         protected_resource_metadata: "/.well-known/oauth-protected-resource",
         authorization_server_metadata: "/.well-known/oauth-authorization-server",
@@ -277,6 +282,96 @@ app.post("/upload", async (c) => {
     console.error("Upload error:", error);
     return c.json(
       { error: error instanceof Error ? error.message : "Upload failed" },
+      500
+    );
+  }
+});
+
+// REST API: Get current user info
+app.get("/api/me", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  const user = await authenticate(c.env, authHeader);
+
+  if (!user) {
+    const baseUrl = new URL(c.req.url).origin;
+    return c.json(
+      { error: "Unauthorized" },
+      401,
+      { "WWW-Authenticate": getWWWAuthenticateHeader(baseUrl) }
+    );
+  }
+
+  return c.json({
+    login: user.login,
+    avatar_url: user.avatar_url,
+    name: user.name,
+  });
+});
+
+// REST API: List user's videos
+app.get("/api/videos", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  const user = await authenticate(c.env, authHeader);
+
+  if (!user) {
+    const baseUrl = new URL(c.req.url).origin;
+    return c.json(
+      { error: "Unauthorized" },
+      401,
+      { "WWW-Authenticate": getWWWAuthenticateHeader(baseUrl) }
+    );
+  }
+
+  try {
+    const videos = await listVideos(c.env.R2, user.login);
+    return c.json({ videos });
+  } catch (error) {
+    console.error("List videos error:", error);
+    return c.json(
+      { error: error instanceof Error ? error.message : "Failed to list videos" },
+      500
+    );
+  }
+});
+
+// REST API: Delete a video
+app.delete("/api/videos/:videoId", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  const user = await authenticate(c.env, authHeader);
+
+  if (!user) {
+    const baseUrl = new URL(c.req.url).origin;
+    return c.json(
+      { error: "Unauthorized" },
+      401,
+      { "WWW-Authenticate": getWWWAuthenticateHeader(baseUrl) }
+    );
+  }
+
+  const videoId = c.req.param("videoId");
+
+  try {
+    // Check ownership
+    const owner = await getVideoOwner(c.env.R2, videoId);
+
+    if (owner === null) {
+      return c.json({ error: "Video not found" }, 404);
+    }
+
+    if (owner !== user.login) {
+      return c.json({ error: "Access denied: you don't own this video" }, 403);
+    }
+
+    const result = await deleteVideo(c.env.R2, videoId);
+    return c.json({
+      success: true,
+      video_id: videoId,
+      files_deleted: result.deleted,
+    });
+  } catch (error) {
+    console.error("Delete video error:", error);
+    return c.json(
+      { error: error instanceof Error ? error.message : "Failed to delete video" },
       500
     );
   }

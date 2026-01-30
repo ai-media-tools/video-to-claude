@@ -274,3 +274,32 @@ export async function uploadVideo(
     "application/json"
   );
 }
+
+/**
+ * Delete a video and all its files from R2.
+ */
+export async function deleteVideo(
+  r2: R2Bucket,
+  videoId: string
+): Promise<{ deleted: number }> {
+  const prefix = `${videoId}/`;
+  const keysToDelete: string[] = [];
+  let cursor: string | undefined;
+
+  // List all objects with the video prefix
+  do {
+    const listed = await r2.list({ prefix, cursor });
+    cursor = listed.truncated ? listed.cursor : undefined;
+
+    for (const object of listed.objects) {
+      keysToDelete.push(object.key);
+    }
+  } while (cursor);
+
+  // Delete all objects
+  if (keysToDelete.length > 0) {
+    await r2.delete(keysToDelete);
+  }
+
+  return { deleted: keysToDelete.length };
+}

@@ -33,6 +33,7 @@ export interface AuthProps {
   name: string;
   email: string;
   accessToken: string;
+  avatar_url?: string;
 }
 
 /**
