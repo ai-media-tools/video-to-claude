@@ -12,6 +12,12 @@ from .core import VideoProcessor
 from .core.frames import get_video_info
 from .core.audio import extract_audio, generate_spectrogram, generate_waveform, analyze_audio
 from .core.manifest import generate_manifest
+from .download import download_video, is_youtube_url
+
+
+def is_url(s: str) -> bool:
+    """Check if string is a URL."""
+    return s.startswith(("http://", "https://"))
 
 
 @click.group(invoke_without_command=True)
@@ -28,7 +34,7 @@ def main(ctx):
 
 
 @main.command("convert")
-@click.argument("video", type=click.Path(exists=True, path_type=Path))
+@click.argument("video", type=str)
 @click.option(
     "--frames", "-f",
     default=20,
@@ -45,27 +51,48 @@ def main(ctx):
     is_flag=True,
     help="Skip audio extraction and analysis"
 )
-def convert(video: Path, frames: int, output: Path | None, no_audio: bool):
+def convert(video: str, frames: int, output: Path | None, no_audio: bool):
     """
-    Convert a video file into a format Claude can experience.
+    Convert a video file or URL into a format Claude can experience.
 
-    VIDEO is the path to the input video file.
+    VIDEO is the path to a video file or a URL (YouTube, direct video links).
     """
-    video = video.resolve()
+    # Check if it's a URL
+    if is_url(video):
+        click.echo(f"Downloading: {video}")
+        if is_youtube_url(video):
+            click.echo("(YouTube video detected, using yt-dlp)")
+        try:
+            video_path = download_video(video)
+            click.echo(f"Downloaded to: {video_path}")
+            click.echo()
+        except ImportError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+        except RuntimeError as e:
+            click.echo(f"Download failed: {e}", err=True)
+            sys.exit(1)
+    else:
+        video_path = Path(video)
+        if not video_path.exists():
+            click.echo(f"Error: File not found: {video}", err=True)
+            sys.exit(1)
+
+    video_path = video_path.resolve()
 
     # Determine output directory
     if output is None:
-        output = Path.cwd() / f"{video.stem}_for_claude"
+        output = Path.cwd() / f"{video_path.stem}_for_claude"
     output = output.resolve()
 
-    click.echo(f"Processing: {video.name}")
+    click.echo(f"Processing: {video_path.name}")
     click.echo(f"Output: {output}/")
     click.echo()
 
     # Get video info
     click.echo("Analyzing video... ", nl=False)
     try:
-        video_info = get_video_info(video)
+        video_info = get_video_info(video_path)
         click.echo(f"done ({video_info['duration']:.1f}s, {video_info['width']}x{video_info['height']})")
     except Exception as e:
         click.echo(f"failed: {e}", err=True)
@@ -79,7 +106,7 @@ def convert(video: Path, frames: int, output: Path | None, no_audio: bool):
     )
 
     try:
-        result = processor.process(video)
+        result = processor.process(video_path)
 
         # Summary
         click.echo()
