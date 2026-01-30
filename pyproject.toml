@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "video-to-claude"
-version = "0.2.0"
+version = "0.2.1"
 description = "Translate video files into a format Claude can experience - a video codec for Claude"
 readme = "README.md"
 license = "MIT"
@@ -36,7 +36,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = [
-    "mcp>=1.0.0",
+    "fastmcp>=0.1.0",
 ]
 upload = [
     "boto3>=1.28",
