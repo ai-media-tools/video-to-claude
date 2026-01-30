@@ -12,6 +12,12 @@ from fastmcp.utilities.types import Image
 
 from .core import VideoProcessor
 from .core.frames import get_video_info
+from .download import download_video, is_youtube_url
+
+
+def is_url(s: str) -> bool:
+    """Check if string is a URL."""
+    return s.startswith(("http://", "https://"))
 
 # Create the MCP server
 mcp = FastMCP(
@@ -19,14 +25,19 @@ mcp = FastMCP(
     instructions="""
     This MCP server converts videos into a format you can experience.
 
-    Use convert_video to process a video file - it will extract frames,
-    analyze audio, and create a manifest describing the content.
+    Use convert_video to process a video file or URL (including YouTube) -
+    it will extract frames, analyze audio, and create a manifest.
 
     Use get_video_info to get metadata about a video without processing it.
 
     Use view_frame to see a specific frame from a processed video.
 
     Use view_spectrogram to see the audio spectrogram visualization.
+
+    Both convert_video and get_video_info accept:
+    - Local file paths: /path/to/video.mp4
+    - YouTube URLs: https://www.youtube.com/watch?v=...
+    - Direct video URLs: https://example.com/video.mp4
     """
 )
 
@@ -42,13 +53,13 @@ def _convert_video(
     output_dir: str | None = None,
 ) -> dict:
     """
-    Process a video file into a format Claude can experience.
+    Process a video file or URL into a format Claude can experience.
 
     This extracts frames, analyzes audio, generates visualizations,
     and creates a manifest describing everything.
 
     Args:
-        path: Path to the video file to process
+        path: Path to the video file OR a URL (YouTube, direct video links)
         frames: Number of frames to extract (default: 20)
         include_audio: Whether to extract and analyze audio (default: True)
         output_dir: Optional output directory. If not provided, creates
@@ -58,10 +69,18 @@ def _convert_video(
         The manifest dictionary containing all video information and
         paths to the generated files.
     """
-    video_path = Path(path).resolve()
-
-    if not video_path.exists():
-        return {"error": f"Video file not found: {video_path}"}
+    # Handle URLs - download first
+    if is_url(path):
+        try:
+            video_path = download_video(path)
+        except ImportError as e:
+            return {"error": f"URL download requires yt-dlp: {e}"}
+        except RuntimeError as e:
+            return {"error": f"Download failed: {e}"}
+    else:
+        video_path = Path(path).resolve()
+        if not video_path.exists():
+            return {"error": f"Video file not found: {video_path}"}
 
     # Determine output directory
     if output_dir:
@@ -98,10 +117,10 @@ def _convert_video(
 
 def _get_video_info(path: str) -> dict:
     """
-    Get metadata about a video file without processing it.
+    Get metadata about a video file or URL without processing it.
 
     Args:
-        path: Path to the video file
+        path: Path to the video file OR a URL (YouTube, direct video links)
 
     Returns:
         Dictionary containing video metadata:
@@ -113,10 +132,18 @@ def _get_video_info(path: str) -> dict:
         - audio_codec: Audio codec (if has_audio)
         - audio_sample_rate: Audio sample rate (if has_audio)
     """
-    video_path = Path(path).resolve()
-
-    if not video_path.exists():
-        return {"error": f"Video file not found: {video_path}"}
+    # Handle URLs - download first
+    if is_url(path):
+        try:
+            video_path = download_video(path)
+        except ImportError as e:
+            return {"error": f"URL download requires yt-dlp: {e}"}
+        except RuntimeError as e:
+            return {"error": f"Download failed: {e}"}
+    else:
+        video_path = Path(path).resolve()
+        if not video_path.exists():
+            return {"error": f"Video file not found: {video_path}"}
 
     try:
         info = get_video_info(video_path)
@@ -314,13 +341,13 @@ def convert_video(
     include_audio: bool = True,
     output_dir: str | None = None,
 ) -> dict:
-    """Process a video file into a format Claude can experience."""
+    """Process a video file or URL (including YouTube) into a format Claude can experience."""
     return _convert_video(path, frames, include_audio, output_dir)
 
 
 @mcp.tool
 def get_video_info_tool(path: str) -> dict:
-    """Get metadata about a video file without processing it."""
+    """Get metadata about a video file or URL without processing it."""
     return _get_video_info(path)
 
 
