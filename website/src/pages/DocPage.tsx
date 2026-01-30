@@ -1,7 +1,9 @@
 import { useParams, Link, Navigate } from 'react-router-dom'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSlug from 'rehype-slug'
+import rehypeSectionize from '@hbsnow/rehype-sectionize'
 
 // Import all markdown files at build time
 const modules = import.meta.glob('../docs/*.md', { query: '?raw', import: 'default', eager: true })
@@ -26,8 +28,126 @@ const navItems = [
   { slug: 'Troubleshooting', title: 'Troubleshooting' },
 ]
 
+// Heading type for table of contents
+interface Heading {
+  level: number
+  text: string
+  id: string
+}
+
+// Slugify function to generate heading IDs (matches rehype-slug behavior)
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Replace multiple hyphens with single
+}
+
+// Extract headings from markdown content
+function extractHeadings(markdown: string): Heading[] {
+  const headingRegex = /^(#{2,3})\s+(.+)$/gm
+  const headings: Heading[] = []
+  let match
+  while ((match = headingRegex.exec(markdown)) !== null) {
+    headings.push({
+      level: match[1].length,
+      text: match[2],
+      id: slugify(match[2])
+    })
+  }
+  return headings
+}
+
+// Table of Contents component with fuzzy search and independent scrolling
+function TableOfContents({
+  headings,
+  activeId
+}: {
+  headings: Heading[]
+  activeId: string
+}) {
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const handleClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    e.preventDefault()
+    const element = document.getElementById(id)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' })
+      // Update URL hash without scrolling
+      window.history.pushState(null, '', `#${id}`)
+    }
+  }, [])
+
+  // Fuzzy filter headings based on search query
+  const filteredHeadings = useMemo(() => {
+    if (!searchQuery.trim()) return headings
+    const query = searchQuery.toLowerCase()
+    return headings.filter(h => h.text.toLowerCase().includes(query))
+  }, [headings, searchQuery])
+
+  if (headings.length === 0) return null
+
+  return (
+    <nav className="hidden xl:block w-48 shrink-0">
+      <div className="sticky top-24 max-h-[calc(100vh-8rem)] flex flex-col">
+        <h4 className="text-sm font-semibold text-[var(--color-bright)] mb-3">
+          On this page
+        </h4>
+
+        {/* Search input */}
+        <div className="relative mb-3">
+          <input
+            type="text"
+            placeholder="Filter..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full px-3 py-1.5 text-xs bg-[var(--color-frame)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-muted)] focus:outline-none focus:border-[var(--color-cyan-dim)] transition-colors"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Scrollable list */}
+        <ul className="space-y-2 text-sm overflow-y-auto flex-1 pr-2">
+          {filteredHeadings.map(h => (
+            <li key={h.id} className={h.level === 3 ? 'pl-4' : ''}>
+              <a
+                href={`#${h.id}`}
+                onClick={(e) => handleClick(e, h.id)}
+                className={`block transition-colors ${
+                  activeId === h.id
+                    ? 'text-[var(--color-cyan)]'
+                    : 'text-[var(--color-muted)] hover:text-[var(--color-text)]'
+                }`}
+              >
+                {h.text}
+              </a>
+            </li>
+          ))}
+          {filteredHeadings.length === 0 && searchQuery && (
+            <li className="text-[var(--color-muted)] text-xs italic">
+              No matches found
+            </li>
+          )}
+        </ul>
+      </div>
+    </nav>
+  )
+}
+
 export function DocPage() {
   const { slug } = useParams<{ slug: string }>()
+  const [activeId, setActiveId] = useState<string>('')
 
   if (!slug || !docs[slug]) {
     return <Navigate to="/docs" replace />
@@ -38,10 +158,49 @@ export function DocPage() {
   const prevDoc = currentIndex > 0 ? navItems[currentIndex - 1] : null
   const nextDoc = currentIndex < navItems.length - 1 ? navItems[currentIndex + 1] : null
 
+  // Extract headings from markdown content
+  const headings = useMemo(() => extractHeadings(content), [content])
+
+  // Set up intersection observer to track active section
+  useEffect(() => {
+    const headingElements = headings
+      .map(h => document.getElementById(h.id))
+      .filter((el): el is HTMLElement => el !== null)
+
+    if (headingElements.length === 0) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find the first visible heading
+        const visibleEntries = entries.filter(entry => entry.isIntersecting)
+        if (visibleEntries.length > 0) {
+          // Sort by position and take the topmost
+          const topEntry = visibleEntries.reduce((prev, curr) => {
+            return prev.boundingClientRect.top < curr.boundingClientRect.top ? prev : curr
+          })
+          setActiveId(topEntry.target.id)
+        }
+      },
+      {
+        rootMargin: '-80px 0px -60% 0px',
+        threshold: 0
+      }
+    )
+
+    headingElements.forEach(el => observer.observe(el))
+
+    return () => observer.disconnect()
+  }, [headings])
+
+  // Reset active heading when slug changes
+  useEffect(() => {
+    setActiveId('')
+  }, [slug])
+
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12">
+    <div className="max-w-7xl mx-auto px-6 py-12">
       <div className="flex gap-8">
-        {/* Sidebar */}
+        {/* Left sidebar */}
         <aside className="hidden lg:block w-64 shrink-0">
           <div className="sticky top-24">
             <Link
@@ -87,7 +246,7 @@ export function DocPage() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 min-w-0">
+        <main className="flex-1 min-w-0 max-w-3xl">
           {/* Mobile back link */}
           <Link
             to="/docs"
@@ -103,8 +262,28 @@ export function DocPage() {
           <article className="prose prose-invert max-w-none">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeSlug]}
+              rehypePlugins={[rehypeSlug, [rehypeSectionize, { properties: { className: 'doc-section' } }]]}
               components={{
+                // Handle sections created by rehype-sectionize - indent H3 sections
+                section: ({ children, className, ...props }) => {
+                  const dataProps = props as { 'data-heading-rank'?: string }
+                  const headingRank = parseInt(dataProps['data-heading-rank'] || '0')
+
+                  // H3 sections get indented with a left border
+                  if (headingRank === 3) {
+                    return (
+                      <section className={`${className || ''} ml-4 pl-4 border-l-2 border-[var(--color-border)]`} {...props}>
+                        {children}
+                      </section>
+                    )
+                  }
+
+                  return (
+                    <section className={className} {...props}>
+                      {children}
+                    </section>
+                  )
+                },
                 // Custom heading styles
                 h1: ({ children }) => (
                   <h1 className="text-3xl md:text-4xl font-bold text-[var(--color-bright)] mb-6 pb-4 border-b border-[var(--color-border)]">
@@ -117,7 +296,7 @@ export function DocPage() {
                   </h2>
                 ),
                 h3: ({ children, id }) => (
-                  <h3 id={id} className="text-xl font-medium text-[var(--color-bright)] mt-8 mb-3 scroll-mt-24">
+                  <h3 id={id} className="text-xl font-medium text-[var(--color-bright)] mt-6 mb-3 scroll-mt-24">
                     {children}
                   </h3>
                 ),
@@ -263,6 +442,9 @@ export function DocPage() {
             )}
           </nav>
         </main>
+
+        {/* Right TOC - On this page */}
+        <TableOfContents headings={headings} activeId={activeId} />
       </div>
     </div>
   )
