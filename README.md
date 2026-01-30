@@ -210,6 +210,12 @@ sudo apt install ffmpeg
 ffmpeg -version
 ```
 
+## Documentation
+
+Full documentation is available at:
+- **Website**: [ai-media-tools.dev/docs](https://ai-media-tools.dev/docs)
+- **GitHub Wiki**: [github.com/ai-media-tools/video-to-claude/wiki](https://github.com/ai-media-tools/video-to-claude/wiki)
+
 ## Why?
 
 Videos contain moments worth sharing - a pet's greeting, a child's first steps, a sunset. Claude can understand these moments through sequential frames and audio analysis, experiencing the motion and sound in its own way.
