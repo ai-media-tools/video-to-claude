@@ -61,14 +61,12 @@ export function Home() {
             >
               <span>Get Started</span>
             </a>
-            <a
-              href="https://github.com/ai-media-tools/video-to-claude/wiki"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to="/docs"
               className="btn-secondary"
             >
               Documentation
-            </a>
+            </Link>
           </div>
 
           {/* Quick install */}

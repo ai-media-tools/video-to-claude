@@ -57,14 +57,7 @@ export function Layout() {
 
           <div className="flex items-center gap-1">
             <NavLink to="/dashboard">Dashboard</NavLink>
-            <a
-              href="https://github.com/ai-media-tools/video-to-claude/wiki"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2 text-sm font-medium rounded-lg transition-all duration-300 text-[var(--color-muted)] hover:text-[var(--color-bright)] hover:bg-[var(--color-frame)]"
-            >
-              Docs
-            </a>
+            <NavLink to="/docs">Docs</NavLink>
             <NavLink to="/privacy">Privacy</NavLink>
             <NavLink to="/terms">Terms</NavLink>
             <a
@@ -101,14 +94,12 @@ export function Layout() {
             </div>
 
             <div className="flex items-center gap-6 text-sm">
-              <a
-                href="https://github.com/ai-media-tools/video-to-claude/wiki"
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                to="/docs"
                 className="text-[var(--color-muted)] hover:text-[var(--color-cyan)] transition-colors"
               >
                 Docs
-              </a>
+              </Link>
               <Link
                 to="/privacy"
                 className="text-[var(--color-muted)] hover:text-[var(--color-cyan)] transition-colors"

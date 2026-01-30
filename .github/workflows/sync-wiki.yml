@@ -1,0 +1,53 @@
+name: Sync Wiki to Website
+
+on:
+  # Trigger when wiki is updated
+  gollum:
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout wiki
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki-repo
+
+      - name: Sync wiki to website
+        run: |
+          # Create docs directory if it doesn't exist
+          mkdir -p website/src/docs
+
+          # Copy all markdown files from wiki
+          cp wiki-repo/*.md website/src/docs/
+
+          # Also update the local wiki folder for reference
+          cp wiki-repo/*.md wiki/
+
+          echo "Synced files:"
+          ls -la website/src/docs/
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add website/src/docs/ wiki/
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Sync wiki documentation"
+            git push
+          fi

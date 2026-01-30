@@ -189,9 +189,7 @@ export function Dashboard() {
             </p>
           </div>
           <a
-            href="https://github.com/ai-media-tools/video-to-claude/wiki"
-            target="_blank"
-            rel="noopener noreferrer"
+            href="/docs"
             className="text-sm text-[var(--color-cyan)] hover:underline shrink-0"
           >
             Docs
@@ -364,9 +362,7 @@ function EmptyState() {
       <p className="mt-8 text-sm text-[var(--color-muted)]">
         Need help?{' '}
         <a
-          href="https://github.com/ai-media-tools/video-to-claude/wiki/Getting-Started"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/docs/Getting-Started"
           className="text-[var(--color-cyan)] hover:underline"
         >
           Read the documentation
