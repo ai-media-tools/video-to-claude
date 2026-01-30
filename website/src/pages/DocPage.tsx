@@ -1,5 +1,5 @@
 import { useParams, Link, Navigate } from 'react-router-dom'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSlug from 'rehype-slug'
@@ -35,38 +35,30 @@ interface Heading {
   id: string
 }
 
-// Slugify function to generate heading IDs (matches rehype-slug behavior)
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '') // Remove special characters
-    .replace(/\s+/g, '-') // Replace spaces with hyphens
-    .replace(/-+/g, '-') // Replace multiple hyphens with single
-}
-
-// Extract headings from markdown content
-function extractHeadings(markdown: string): Heading[] {
-  const headingRegex = /^(#{2,3})\s+(.+)$/gm
+// Extract headings from DOM (ensures IDs match what rehype-slug actually generates)
+function extractHeadingsFromDOM(container: HTMLElement): Heading[] {
+  const headingElements = container.querySelectorAll('h2[id], h3[id]')
   const headings: Heading[] = []
-  let match
-  while ((match = headingRegex.exec(markdown)) !== null) {
+  headingElements.forEach(el => {
+    const level = el.tagName === 'H2' ? 2 : 3
     headings.push({
-      level: match[1].length,
-      text: match[2],
-      id: slugify(match[2])
+      level,
+      text: el.textContent || '',
+      id: el.id
     })
-  }
+  })
   return headings
 }
 
 // Table of Contents component with fuzzy search and independent scrolling
 function TableOfContents({
   headings,
-  activeId
+  activeId,
+  onActiveChange
 }: {
   headings: Heading[]
   activeId: string
+  onActiveChange: (id: string) => void
 }) {
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -74,11 +66,13 @@ function TableOfContents({
     e.preventDefault()
     const element = document.getElementById(id)
     if (element) {
+      // Update active state immediately on click
+      onActiveChange(id)
       element.scrollIntoView({ behavior: 'smooth' })
       // Update URL hash without scrolling
       window.history.pushState(null, '', `#${id}`)
     }
-  }, [])
+  }, [onActiveChange])
 
   // Fuzzy filter headings based on search query
   const filteredHeadings = useMemo(() => {
@@ -119,8 +113,8 @@ function TableOfContents({
 
         {/* Scrollable list */}
         <ul className="space-y-2 text-sm overflow-y-auto flex-1 pr-2">
-          {filteredHeadings.map(h => (
-            <li key={h.id} className={h.level === 3 ? 'pl-4' : ''}>
+          {filteredHeadings.map((h, index) => (
+            <li key={`${h.id}-${index}`} className={h.level === 3 ? 'pl-4' : ''}>
               <a
                 href={`#${h.id}`}
                 onClick={(e) => handleClick(e, h.id)}
@@ -148,6 +142,8 @@ function TableOfContents({
 export function DocPage() {
   const { slug } = useParams<{ slug: string }>()
   const [activeId, setActiveId] = useState<string>('')
+  const [headings, setHeadings] = useState<Heading[]>([])
+  const articleRef = useRef<HTMLElement>(null)
 
   if (!slug || !docs[slug]) {
     return <Navigate to="/docs" replace />
@@ -158,43 +154,58 @@ export function DocPage() {
   const prevDoc = currentIndex > 0 ? navItems[currentIndex - 1] : null
   const nextDoc = currentIndex < navItems.length - 1 ? navItems[currentIndex + 1] : null
 
-  // Extract headings from markdown content
-  const headings = useMemo(() => extractHeadings(content), [content])
-
-  // Set up intersection observer to track active section
+  // Extract headings from DOM after render (use requestAnimationFrame to ensure DOM is ready)
   useEffect(() => {
-    const headingElements = headings
-      .map(h => document.getElementById(h.id))
-      .filter((el): el is HTMLElement => el !== null)
-
-    if (headingElements.length === 0) return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Find the first visible heading
-        const visibleEntries = entries.filter(entry => entry.isIntersecting)
-        if (visibleEntries.length > 0) {
-          // Sort by position and take the topmost
-          const topEntry = visibleEntries.reduce((prev, curr) => {
-            return prev.boundingClientRect.top < curr.boundingClientRect.top ? prev : curr
-          })
-          setActiveId(topEntry.target.id)
-        }
-      },
-      {
-        rootMargin: '-80px 0px -60% 0px',
-        threshold: 0
+    const extractHeadings = () => {
+      if (articleRef.current) {
+        const extractedHeadings = extractHeadingsFromDOM(articleRef.current)
+        setHeadings(extractedHeadings)
       }
-    )
+    }
+    // Wait for next frame to ensure markdown has rendered
+    const frameId = requestAnimationFrame(() => {
+      requestAnimationFrame(extractHeadings)
+    })
+    return () => cancelAnimationFrame(frameId)
+  }, [slug, content])
 
-    headingElements.forEach(el => observer.observe(el))
+  // Track active section based on scroll position
+  useEffect(() => {
+    if (headings.length === 0) return
 
-    return () => observer.disconnect()
+    const handleScroll = () => {
+      const headingElements = headings
+        .map(h => ({ id: h.id, el: document.getElementById(h.id) }))
+        .filter((h): h is { id: string; el: HTMLElement } => h.el !== null)
+
+      if (headingElements.length === 0) return
+
+      // Find the heading closest to the top of the viewport (with some offset for the header)
+      const scrollTop = window.scrollY + 100 // Account for sticky header
+
+      let activeHeading = headingElements[0].id
+      for (const { id, el } of headingElements) {
+        if (el.offsetTop <= scrollTop) {
+          activeHeading = id
+        } else {
+          break
+        }
+      }
+
+      setActiveId(activeHeading)
+    }
+
+    // Run once on mount
+    handleScroll()
+
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
   }, [headings])
 
   // Reset active heading when slug changes
   useEffect(() => {
     setActiveId('')
+    setHeadings([])
   }, [slug])
 
   return (
@@ -259,7 +270,7 @@ export function DocPage() {
           </Link>
 
           {/* Markdown content */}
-          <article className="prose prose-invert max-w-none">
+          <article ref={articleRef} className="prose prose-invert max-w-none">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeSlug, [rehypeSectionize, { properties: { className: 'doc-section' } }]]}
@@ -444,7 +455,7 @@ export function DocPage() {
         </main>
 
         {/* Right TOC - On this page */}
-        <TableOfContents headings={headings} activeId={activeId} />
+        <TableOfContents headings={headings} activeId={activeId} onActiveChange={setActiveId} />
       </div>
     </div>
   )
